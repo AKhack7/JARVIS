@@ -1,0 +1,5 @@
+pip install SpeechRecognition
+pip install mtranslate
+pip install colorama
+pip install edge-tts
+pip install pygame
