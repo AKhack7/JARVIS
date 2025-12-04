@@ -4,54 +4,48 @@ import os
 import edge_tts
 import pygame
 
-
 VOICE = "en-AU-WilliamNeural"
 BUFFER_SIZE = 1024
 
 def remove_file(file_path):
-    max_attempts = 3
-    attempts = 0
-    while attempts < max_attempts:
-        try:
-            while open (file_path,"wb"):
-                pass
-            os.remove(file_path)
-            break
-        except Exception as e:
-            print(f"error : {e}")
-            attempts +=1
-
-async def amain(TEXT,output_file) -> None:
     try:
-        cm_txt = edge_tts.Communicate(TEXT,VOICE)
-        await cm_txt.save(output_file)
-        thread = threading.Thread(target=play_audio,args=(output_file))
-        thread.start()
-        thread.join()
+        if os.path.exists(file_path):
+            os.remove(file_path)
     except Exception as e:
-        print(f"error : {e}")
-    finally:
-        remove_file(output_file)
+        print(f"Error removing file: {e}")
 
-1 usage
 def play_audio(file_path):
     try:
         pygame.init()
         pygame.mixer.init()
-        sound = pygame.mixer.sound(file_path)
-        sound.play()
-        while pygame.mixer.get_busy():
-            pygame.time.get_ticks(10)
+        pygame.mixer.music.load(file_path)
+        pygame.mixer.music.play()
 
-            pygame.quit()
+        while pygame.mixer.music.get_busy():
+            pygame.time.wait(100)
 
+        pygame.mixer.quit()
     except Exception as e:
-        print(f"error : {e}")
+        print(f"Audio error : {e}")
 
-1 usage
+async def amain(TEXT, output_file) -> None:
+    try:
+        tts = edge_tts.Communicate(TEXT, VOICE)
+        await tts.save(output_file)
 
-def speak(TEXT,output_file=None):
+        thread = threading.Thread(target=play_audio, args=(output_file,))
+        thread.start()
+        thread.join()
+    except Exception as e:
+        print(f"TTS error : {e}")
+    finally:
+        remove_file(output_file)
+
+def speak(TEXT, output_file=None):
     if output_file is None:
-        output_file = f"{os.getcwd()}/speak.mp3"
-        asyncio.run(amain(TEXT,output_file))
-speak("welcome, the world of jarvis")        
+        output_file = os.path.join(os.getcwd(), "speech.mp3")
+    asyncio.run(amain(TEXT, output_file))
+
+# Test
+if __name__ == "__main__":
+    speak("Welcome to the world of Jarvis")
