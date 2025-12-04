@@ -6,6 +6,8 @@
 
 [](https://i.gifer.com/LCPT.gif)
 
+<img src="https://raw.githubusercontent.com/AKhack7/Free-repository/main/000e6c617f2eac48021d0ae1cf95eb6c.gif" width="350">
+
 ```
 pip install SpeechRecognition
 ```
