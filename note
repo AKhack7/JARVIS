@@ -1,0 +1,250 @@
+(1) Project :- ISHA (Intelligent System for Human Assistance) female voice assistant
+
+We are going to create an AI project using python code and its name will be Isha. The computer being developed will be a personal assistant that will be able to control all the computer settings and run any computer software. And it will also be able to do Google searching, along with this it will be able to do all such work like searching for the file. We will not use any company's API key to build this project because we have less user data saved.
+
+This assistant will be chatbot and a voice assistant, and will also respond to hand gestures.
+
+
+### Information about how this assistant will work :
+1. We will make this GUI.
+2. Will create voice assistant mode
+3. Beyond that, we will make this personal LLM model.
+
+(A). The shape of the GUI will be a capsule. There will be a round shaped mic button inside the capsule on the lift side. There is a round setting button on the right side and there will be a search bar in the middle.
+
+Its GUI should consist solely of a microphone (mic) button, a search bar, and a settings button; nothing else is required.
+GUI working :-
+👉 When the user clicks the mic button once, the microphone will turn on; and upon clicking the mic button a second time, the microphone will turn off. Enabling the user to interact with the assistant by providing voice input.
+
+👉 User can input text into the assistant from the searching bar.
+
+👉 Clicking the settings button once will display a pop-up, and clicking it twice will launch the pop-up.
+The pop-up should be rectangular in shape, with slightly rounded corners.
+
+👉 There will be some buttons inside the pop-up which rectangular in shape, with slightly rounded corners.
+
+Upon clicking it, we should be able to toggle Wi-Fi, Bluetooth, and Airplane Mode on or off, adjust the volume, and control Dark Mode. And there should be a Wired Display button, a Nearby Sharing button, and also a Settings button that opens the Windows settings when clicked.
+_________________________________
+
+And there will be a button labeled "! Icone".
+
+👉 Clicking on the gold will trigger a pop-up that rectangular in shape, with slightly rounded corners. Inside the popup, at the top center, there should be a segmented control button labeled "Apk" and "Settings"
+
+👉 Clicking on the Apk button will display a list of all the application  available on the computer; clicking on any specific name in the list will open that particular application.
+
+👉 Clicking on the Settings button will display a list of all the settings available on the computer; clicking on any specific name in the list will open that particular setting.
+
+👉👉 Here is the list of settings and applications to be added to the popup.
+
+Application list:-
+
+
+Outlook
+People
+3D Viewer
+Calculator
+Calendar
+Camera
+Clock
+Copilot
+Cortana
+Feedback Hub
+Get Help
+Google Chrome
+Groove Music
+Mail
+Word
+PowerPoint
+Maps
+Microsoft Edge
+Microsoft Solitaire Collection
+Microsoft Store
+Mixed Reality Portal System
+Movies & TV
+Office
+Excel
+OneDrive
+OneNote for Windows 10
+Outlook
+Paint 3D
+People
+Photos
+Skype
+Snip & Sketch
+Sticky Notes
+Movies
+Tally Prime
+Tips
+Voice Recorder
+Weather
+Windows Backup
+Windows Security
+Xbox Console Companion
+Xbox Game Bar
+Your Phone
+
+
+Setting list:-
+
+Display
+Sound
+Notifications & actions
+Focus assist
+Power & sleep
+Storage
+Tablet
+Multitasking
+Projecting to this PC
+Shared experiences
+System Components
+Clipboard
+Remote Desktop
+Optional features
+About
+Bluetooth & other devices
+Printers & scanners
+Mouse
+Typing
+Pen & Windows Ink
+AutoPlay
+USB
+Mobile devices
+Status
+Wi-Fi
+Ethernet
+Dial-up
+VPN
+Airplane mode
+Mobile hotspot
+Proxy
+Background
+Colors
+Lock screen
+Themes
+Fonts
+Start
+Taskbar
+Apps & features
+Default apps
+Offline maps
+Apps for websites
+Video playback
+Startup
+Your info
+Email & accounts
+Sign-in options
+Access work or school
+Family & other users
+Windows backup
+Date & time
+Region
+Language
+Speech
+Game Bar
+Captures
+Game Mode
+Display
+Mouse pointer
+Text cursor
+Magnifier
+Color filters
+High contrast
+Narrator
+Audio
+Closed captions
+Speech
+Keyboard
+Mouse
+Eye control
+Permissions & History
+Searching Windows
+Windows Update
+Delivery Optimization
+Windows Security
+Files backup
+Troubleshoot
+Recovery
+Activation
+Find my device
+For developers
+Windows Insider Program
+General
+Speech
+Inking & typing personalization
+Diagnostics & feedback
+Activity history
+Location
+Camera
+Microphone
+Voice activation
+Notifications
+Account info
+Contacts
+Calendar
+Phone calls
+Call history
+Email
+Tasks
+Messaging
+Radios
+Other devices
+Background apps
+App diagnostics
+Automatic file downloads
+
+🔷User jo bole → usme match karo
+🔷Best match open karo
+Example code :-
+
+👉 import os
+
+def open_app_or_setting(command):
+
+    command = command.lower()
+
+    # 🔍 Apps check
+    for app in apps:
+        if app in command:
+            os.system(apps[app])
+            speak(f"{app} open kar raha hu")
+            return True
+
+    # ⚙️ Settings check
+    for setting in settings:
+        if setting in command:
+            os.system(f"start {settings[setting]}")
+            speak(f"{setting} setting open kar raha hu")
+            return True
+
+    return False
+
+
+👉 from difflib import get_close_matches
+
+def smart_open(command):
+
+    command = command.lower()
+    all_keys = list(apps.keys()) + list(settings.keys())
+
+    match = get_close_matches(command, all_keys, n=1, cutoff=0.5)
+
+    if match:
+        key = match[0]
+
+        if key in apps:
+            os.system(apps[key])
+            speak(f"{key} open kar raha hu")
+
+        elif key in settings:
+            os.system(f"start {settings[key]}")
+            speak(f"{key} setting open kar raha hu")
+
+        return True
+
+    return False
+_________________________________
+
+(B) It possesses its own proprietary LLM code, enabling it to accurately comprehend user input and generate appropriate replies or responses. It should continuously save its data to a file so that it can remember things.
+It should feature a neural network model—specifically, one designed to function entirely without the need for any APIs.
+
+🔷 Now we will create the main command/formation on which this assistant will work.
