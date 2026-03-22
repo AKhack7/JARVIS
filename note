@@ -1,352 +1,405 @@
-02
-🔷 Its reply database will function in a manner similar to what is shown in the code below.
+
+🔷 SCREENSHOT SYSTEM (No overwrite 🔥
+Code :- import pyautogui
+import os
+from datetime import datetime
+
+def take_screenshot():
+    folder = "screenshots"
+    
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+    # unique filename (date + time)
+    filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".png"
+    path = os.path.join(folder, filename)
+
+    screenshot = pyautogui.screenshot()
+    screenshot.save(path)
+
+    speak("Screenshot save ho gaya")
+    print("Saved at:", path)
+
+🔷 SCREEN RECORDING SYSTEM
 
 Code :-
-replies = {
-    "hello": ["Hello! Kaise ho?", "Hi! Main Isha bol rahi hu"],
-    "hi": ["Hi! Kya help chahiye?", "Hello!"],
-    "thanks": ["Welcome!", "Koi baat nahi 😊"],
-    "thank you": ["Welcome!", "Khushi hui help karke"],
-    "your name": ["Mera naam Isha hai", "Isha assistant hu main"],
-    "who are you": ["Main Isha hu, tumhari assistant"],
-}
+import cv2
+import numpy as np
 
-👉👉 import random
+def screen_record(duration=10):
+    speak("Screen recording start ho rahi hai")
 
-def smart_reply(command):
+    screen_size = pyautogui.size()
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
 
+    filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".avi"
+    out = cv2.VideoWriter(filename, fourcc, 20.0, screen_size)
+
+    start_time = datetime.now()
+
+    while (datetime.now() - start_time).seconds < duration:
+        img = pyautogui.screenshot()
+        frame = np.array(img)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        out.write(frame)
+
+    out.release()
+    speak("Recording save ho gayi")
+
+🔷 SELFIE SYSTEM (Webcam)
+
+Code :- def take_selfie():
+    speak("Camera open kar raha hu")
+
+    cam = cv2.VideoCapture(0)
+
+    ret, frame = cam.read()
+
+    if ret:
+        filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".jpg"
+        cv2.imwrite(filename, frame)
+        speak("Selfie save ho gayi")
+    else:
+        speak("Camera error")
+
+    cam.release()
+
+🔷 INTENT ADD KARO
+
+Code :- def detect_media_command(command):
     command = command.lower()
 
-    for key in replies:
-        if key in command:
-            response = random.choice(replies[key])
-            speak(response)
-            return True
+    if "screenshot" in command:
+        return "screenshot"
 
-    return False
+    elif "record" in command:
+        return "record"
+
+    elif "selfie" in command or "photo" in command:
+        return "selfie"
+
+    return None
+
+
+🔷IP ADDRESS + INTERNET SPEED
+import socket
+import speedtest
+
+def check_ip():
+    hostname = socket.gethostname()
+    ip = socket.gethostbyname(hostname)
+    speak(f"Your IP address is {ip}")
+    print("IP:", ip)
+
+def check_speed():
+    speak("Internet speed check kar raha hu")
+    st = speedtest.Speedtest()
+
+    download = st.download() / 1_000_000
+    upload = st.upload() / 1_000_000
+
+    speak(f"Download speed {round(download,2)} Mbps hai")
+    speak(f"Upload speed {round(upload,2)} Mbps hai")
+✅ Example:
+👉 “IP batao” → IP address
+👉 “internet speed check karo” → speed result
+⏰ 2. ALARM SYSTEM
+
+
+import time
+from datetime import datetime
+
+def set_alarm(alarm_time):
+    speak(f"Alarm set ho gaya {alarm_time}")
+
+    while True:
+        now = datetime.now().strftime("%H:%M")
+        if now == alarm_time:
+            speak("Alarm baj raha hai")
+            break
+✅ Example:
+👉 “alarm 07:30 set karo”
+🔔 3. REMINDER SYSTEM
+
+
+import threading
+
+def set_reminder(seconds, message):
+    def remind():
+        time.sleep(seconds)
+        speak(f"Reminder: {message}")
+
+    threading.Thread(target=remind).start()
+✅ Example:
+👉 “10 second baad yaad dilana pani piyo”
+📅 4. DATE, TIME, DAY
+
+
+def tell_time():
+    now = datetime.now()
+    speak(f"Time hai {now.strftime('%H:%M')}")
+
+def tell_date():
+    now = datetime.now()
+    speak(f"Aaj date hai {now.strftime('%d %B %Y')}")
+
+def tell_day():
+    now = datetime.now()
+    speak(f"Aaj {now.strftime('%A')} hai")
+✅ Example:
+👉 “time kya hai”
+👉 “aaj ka din kya hai”
+🧮 5. MATH SOLVER (🔥 Powerful)
+👉 Ye sab handle karega:
+/ √
+decimal (.86 + 4)
+π ₹ € ¥ etc.
+
+from sympy import sympify
+
+
+def solve_math(expr):
+    try:
+        expr = expr.replace("×", "*").replace("÷", "/")
+        expr = expr.replace("√", "sqrt")
+        expr = expr.replace("π", "pi")
+
+        result = sympify(expr)
+        speak(f"Answer hai {result}")
+        print("Result:", result)
+
+    except:
+        speak("Ye solve nahi ho paya")
+✅ Examples:
+👉 Input: 2+7 → 9
+👉 Input: 57.97+8 → 65.97
+👉 Input: .86+4 → 4.86
+👉 Input: √16 → 4
+👉 Input: π*2 → 6.28 approx
+
+🔷 ADVANCED ISHA GESTURE
+
+Code :-
+import cv2
+import mediapipe as mp
+import pyautogui
+import time
+import math
+import os
+import subprocess
+
+# ===== INIT =====
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(min_detection_confidence=0.7)
+cap = cv2.VideoCapture(0)
+
+gesture_active = False
+last_action = 0
+prev_x, prev_y = 0, 0
+
+# ===== FUNCTIONS =====
+
+def distance(p1, p2):
+    return math.hypot(p1.x - p2.x, p1.y - p2.y)
+
+def is_fist(hand):
+    tips = [8, 12, 16, 20]
+    return all(hand.landmark[t].y > hand.landmark[t-2].y for t in tips)
+
+def is_open_palm(hand):
+    return all(hand.landmark[t].y < hand.landmark[t-2].y for t in [8,12,16,20])
+
+def is_pinch(hand):
+    return distance(hand.landmark[4], hand.landmark[8]) < 0.05
+
+def fingers_up(hand):
+    return [
+        hand.landmark[8].y < hand.landmark[6].y,
+        hand.landmark[12].y < hand.landmark[10].y,
+        hand.landmark[16].y < hand.landmark[14].y,
+        hand.landmark[20].y < hand.landmark[18].y
+    ]
+
+# ===== MAIN LOOP =====
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        continue
+
+    frame = cv2.flip(frame, 1)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb)
+
+    if result.multi_hand_landmarks:
+        for hand in result.multi_hand_landmarks:
+
+            x = hand.landmark[8].x
+            y = hand.landmark[8].y
+
+            screen_w, screen_h = pyautogui.size()
+            screen_x = int(x * screen_w)
+            screen_y = int(y * screen_h)
+
+            # ===== ACTIVATE / DEACTIVATE =====
+            if is_open_palm(hand):
+                if time.time() - last_action > 2:
+                    gesture_active = not gesture_active
+                    print("Gesture Mode:", gesture_active)
+                    last_action = time.time()
+
+            if not gesture_active:
+                continue
+
+            # ===== AIR MOUSE =====
+            pyautogui.moveTo(screen_x, screen_y)
+
+            # ===== CLICK / DRAG =====
+            if is_pinch(hand):
+                pyautogui.mouseDown()
+            else:
+                pyautogui.mouseUp()
+
+            # ===== SCREENSHOT =====
+            if is_fist(hand):
+                if time.time() - last_action > 2:
+                    pyautogui.screenshot("screenshot.png")
+                    print("Screenshot")
+                    last_action = time.time()
+
+            # ===== FINGER PATTERN =====
+            f = fingers_up(hand)
+
+            # ✌️ 2 fingers → Camera Photo
+            if f == [True, True, False, False]:
+                if time.time() - last_action > 2:
+                    cv2.imwrite("photo.png", frame)
+                    print("Photo Captured")
+                    last_action = time.time()
+
+            # 👍 Thumb only → Volume Up
+            if f == [False, False, False, False] and hand.landmark[4].y < hand.landmark[3].y:
+                pyautogui.press("volumeup")
+
+            # 👇 All down → Volume Down
+            if f == [False, False, False, False] and hand.landmark[4].y > hand.landmark[3].y:
+                pyautogui.press("volumedown")
+
+            # ===== SWIPE (APP SWITCH) =====
+            if prev_x != 0:
+                dx = x - prev_x
+
+                if dx > 0.15:
+                    pyautogui.hotkey("alt", "tab")
+
+                elif dx < -0.15:
+                    pyautogui.hotkey("alt", "shift", "tab")
+
+            prev_x = x
+
+            # ===== ZOOM CONTROL =====
+            if distance(hand.landmark[8], hand.landmark[12]) > 0.1:
+                pyautogui.hotkey("ctrl", "+")
+
+            elif distance(hand.landmark[8], hand.landmark[12]) < 0.05:
+                pyautogui.hotkey("ctrl", "-")
+
+            # ===== APP OPEN (CUSTOM) =====
+            if f == [True, False, False, False]:  # only index
+                subprocess.Popen("notepad.exe")
+
+            # ===== FILE OPEN =====
+            if f == [False, True, False, False]:  # only middle
+                try:
+                    os.startfile("C:\\Users\\Public\\Documents")
+                except:
+                    pass
+
+            # ===== STOP SYSTEM =====
+            if f == [True, True, True, True]:
+                print("System Stopped")
+                gesture_active = False
+
+    # emergency exit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
 
 
 _________________________________
+🔷
 
-🔷 Action → Shortcut Brain
-
-Code :- action_map = {
-    "select all": ["ctrl", "a"],
-    "copy": ["ctrl", "c"],
-    "paste": ["ctrl", "v"],
-    "cut": ["ctrl", "x"],
-    "undo": ["ctrl", "z"],
-    "redo": ["ctrl", "y"],
-    "save": ["ctrl", "s"],
-    "print": ["ctrl", "p"],
-
-    "new tab": ["ctrl", "t"],
-    "close tab": ["ctrl", "w"],
-    "refresh": ["ctrl", "r"],
-
-    "switch window": ["alt", "tab"],
-    "close window": ["alt", "f4"],
-
-    "find": ["ctrl", "f"],
-    "zoom in": ["ctrl", "+"],
-    "zoom out": ["ctrl", "-"],
-
-    "screenshot": ["win", "shift", "s"]
-}
-
-
-🔷 Smart Action Detection (Hinglish)
-
-Code :-
-def detect_action(command):
-    command = command.lower()
-
-    if "select" in command:
-        return "select all"
-
-    elif "copy" in command:
-        return "copy"
-
-    elif "paste" in command:
-        return "paste"
-
-    elif "delete" in command:
-        return "cut"
-
-    elif "undo" in command:
-        return "undo"
-
-    elif "save" in command:
-        return "save"
-
-    elif "refresh" in command:
-        return "refresh"
-
-    elif "band karo" in command or "close" in command:
-        return "close window"
-
-    return None
-
-🔷 Execute Smart Shortcut
-Code :-
-import pyautogui
-
-def perform_action(action):
-    if action in action_map:
-        keys = action_map[action]
-        pyautogui.hotkey(*keys)
-        speak(f"{action} kar diya")
-    else:
-        speak("Iska shortcut mujhe nahi pata")
-
-🔷 Gaming Shortcuts
-Code :-
-def game_control(command):
-
-    if "jump" in command:
-        pyautogui.press("space")
-
-    elif "shoot" in command:
-        pyautogui.click()
-
-    elif "reload" in command:
-        pyautogui.press("r")
-
-    elif "run" in command:
-        pyautogui.keyDown("shift")
-
-    elif "stop running" in command:
-        pyautogui.keyUp("shift")
-
-
-🔷 Mouse Control by Voice
-
-Code :- def mouse_control(command):
-
-    if "left click" in command:
-        pyautogui.click()
-
-    elif "right click" in command:
-        pyautogui.rightClick()
-
-    elif "scroll up" in command:
-        pyautogui.scroll(500)
-
-    elif "scroll down" in command:
-        pyautogui.scroll(-500)
-
-    elif "move mouse" in command:
-        pyautogui.moveTo(500, 500)
-
-🔷 File Open System
-
-Code :-
-import os
-
-def open_file(command):
-
-    if "notepad" in command:
-        os.system("notepad")
-
-    elif "chrome" in command:
-        os.system("start chrome")
-
-    elif "calculator" in command:
-        os.system("calc")
-
-🔷 Custom Shortcut Training (🔥 Powerful)
-
-Code :-
-custom_actions = {}
-
-def train_shortcut(command, action, keys):
-    custom_actions[action] = keys
-    speak(f"{action} save ho gaya")
-
-def run_custom_action(command):
-    for action in custom_actions:
-        if action in command:
-            pyautogui.hotkey(*custom_actions[action])
-            return True
-    return False
-
-🔷 Website Open System (important for you)
-
-Code :-
-import webbrowser
-
-def open_website(query):
-    sites = {
-        "youtube": "https://www.youtube.com",
-        "google": "https://www.google.com",
-        "instagram": "https://www.instagram.com",
-        "whatsapp": "https://web.whatsapp.com",
-        "facebook": "https://www.facebook.com"
-    }
-
-    for name in sites:
-        if name in query.lower():
-            webbrowser.open(sites[name])
-            return f"{name} open kar raha hu"
-
-    return None
-
-
-🔷 Hinglish Smart Understanding
-
-Code :-
-def detect_intent(text):
-    text = text.lower()
-
-    if any(word in text for word in ["open", "kholo", "chalu karo"]):
-        return "open"
-
-    elif any(word in text for word in ["kya hai", "kaun hai", "kaise", "what", "who"]):
-        return "search"
-
-    elif any(word in text for word in ["play", "song", "gaana"]):
-        return "youtube"
-
-    else:
-        return "unknown"
-
-🔷 Better Google Parsing (Improved)
-
-Code :- def google_search(query):
+def check_voice():
+    global active
     try:
-        url = f"https://www.google.com/search?q={query}"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        with sr.Microphone() as source:
+            audio = recognizer.listen(source, timeout=1, phrase_time_limit=2)
+            command = recognizer.recognize_google(audio).lower()
 
-        res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, "html.parser")
+            if "activate signal" in command:
+                active = True
+                speak("Activated")
 
-        # Multiple attempts
-        answer = soup.find("div", class_="BNeawe")
-        if answer:
-            return answer.text
-
-        answer2 = soup.find("span")
-        if answer2:
-            return answer2.text
-
-        return "Mujhe clear result nahi mila"
-
+            elif "deactivate signal" in command:
+                active = False
+                speak("Deactivated")
     except:
-        return "Internet error"
+        pass
 
-🔷 Code (Auto Play YouTube Song)
-Code :- import pywhatkit as kit
+# ===== MAIN LOOP =====
+while True:
+    check_voice()  # voice check
 
-def play_youtube_song(query):
-    try:
-        speak("YouTube par play kar raha hu")
-        kit.playonyt(query)   # auto search + auto play
-    except:
-        speak("Song play nahi ho paya")
+    ret, frame = cap.read()
+    if not ret:
+        continue
 
+    frame = cv2.flip(frame, 1)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb)
 
-🔷 Intent update karo (important)
+    if active and result.multi_hand_landmarks:
+        for hand in result.multi_hand_landmarks:
 
-Code :-
-def detect_intent(text):
-    text = text.lower()
+            # finger positions
+            index = hand.landmark[8].y < hand.landmark[6].y
+            middle = hand.landmark[12].y < hand.landmark[10].y
+            ring = hand.landmark[16].y < hand.landmark[14].y
+            pinky = hand.landmark[20].y < hand.landmark[18].y
 
-    if any(word in text for word in ["open", "kholo"]):
-        return "open"
+            # ===== SIMPLE SIGN LOGIC =====
 
-    elif any(word in text for word in ["play", "song", "gaana", "chalao"]):
-        return "youtube"
+            # 👋 Open hand
+            if index and middle and ring and pinky:
+                sign = "Hello"
 
-    elif any(word in text for word in ["kya hai", "kaun hai", "what", "who"]):
-        return "search"
+            # ✌️ 2 fingers
+            elif index and middle and not ring and not pinky:
+                sign = "No"
 
-    else:
-        return "unknown"
+            # ✊ fist
+            elif not index and not middle and not ring and not pinky:
+                sign = "Yes"
 
-🔷 Advanced Upgrade (optional but awesome)
-Code:-
-Python id="cleanquery1"
-def clean_query(query):
-    remove_words = ["play", "song", "gaana", "chalao"]
-    for word in remove_words:
-        query = query.lower().replace(word, "")
-    return query.strip()
-Use like:
+            # 👌 (approx: index + thumb close)
+            elif abs(hand.landmark[4].x - hand.landmark[8].x) < 0.05:
+                sign = "OK"
 
-Python id="ytcleanmain"
-elif intent == "youtube":
-    clean = clean_query(query)
-    play_youtube_song(clean)
+            else:
+                sign = None
 
+            # ===== SPEAK =====
+            if sign and time.time() - last_time > 2:
+                speak(sign)
+                last_time = time.time()
 
-🔷 YouTube Music Control Functions
+    # exit
+    if cv2.waitKey(1) == 27:
+        break
 
-Code :-
-import pyautogui
-import time
-
-def stop_song():
-    pyautogui.press("k")   # YouTube play/pause
-    speak("Song band kar diya")
-
-def next_song():
-    pyautogui.hotkey("shift", "n")
-    speak("Next song play kar raha hu")
-
-def previous_song():
-    pyautogui.hotkey("shift", "p")
-    speak("Previous song play kar raha hu")
-
-def volume_up():
-    pyautogui.press("volumeup")
-    speak("Volume badha diya")
-
-def volume_down():
-    pyautogui.press("volumedown")
-    speak("Volume kam kar diya")
-
-def mute_volume():
-    pyautogui.press("volumemute")
-    speak("Volume mute kar diya")
-
-
-🔷 YouTube Background Music Mode
-
-Code :-
-music_mode = False
-
-def background_music_on():
-    global music_mode
-    music_mode = True
-    speak("Background music mode on hai")
-
-def background_music_off():
-    global music_mode
-    music_mode = False
-    speak("Background music mode off hai")
-
-🔷 Intent Update (IMPORTANT)
-
-Code :-
-def detect_intent(text):
-    text = text.lower()
-
-    if "band karo" in text or "stop" in text:
-        return "stop"
-
-    elif "next" in text:
-        return "next"
-
-    elif "previous" in text or "pichla" in text:
-        return "previous"
-
-    elif "volume" in text:
-        return "volume"
-
-    elif "background music" in text:
-        return "bgmusic"
-
-    elif any(word in text for word in ["play", "song", "gaana", "chalao"]):
-        return "youtube"
-
-    return "unknown"
+cap.release()
+cv2.destroyAllWindows()
