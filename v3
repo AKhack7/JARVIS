@@ -806,3 +806,13 @@ int main(int argc, char* argv[]) {
     
     return 0;
 }
+
+
+
+
+
+
+
+
+# Install GTK for Windows first from https://www.gtk.org/download/windows.php
+cl /EHsc /std:c++17 isha.cpp /Fe:isha.exe /I"C:\gtk\include" /I"C:\gtk\include\gtk-3.0" /link /LIBPATH:"C:\gtk\lib" gtk-3.lib
