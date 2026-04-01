@@ -1,0 +1,808 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════╗
+ * ║          ISHA - Intelligent System for Human Assistance          ║
+ * ║                     C++ Desktop Assistant                        ║
+ * ║                         Version 1.0                              ║
+ * ╚══════════════════════════════════════════════════════════════════╝
+ * 
+ * Dependencies:
+ *   - Windows SDK (for Windows-specific features)
+ *   - For Linux: espeak, pocketsphinx, GTK/Qt
+ * 
+ * Compile (Windows - MSVC):
+ *   cl /EHsc /std:c++17 isha.cpp /Fe:isha.exe user32.lib shell32.lib winmm.lib
+ * 
+ * Compile (Linux - g++):
+ *   g++ -std=c++17 isha.cpp -o isha -pthread -lespeak -lpocketsphinx -lgtk-3
+ */
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <unordered_map>
+#include <random>
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <queue>
+#include <fstream>
+#include <sstream>
+#include <regex>
+#include <algorithm>
+#include <ctime>
+#include <cstdlib>
+#include <functional>
+
+#ifdef _WIN32
+    #include <windows.h>
+    #include <shellapi.h>
+    #include <mmsystem.h>
+    #pragma comment(lib, "winmm.lib")
+    #pragma comment(lib, "shell32.lib")
+#else
+    #include <unistd.h>
+    #include <cstdlib>
+    #include <sys/wait.h>
+    // For Linux TTS - requires espeak
+    // For speech recognition - requires pocketsphinx
+#endif
+
+// For cross-platform GUI (using GTK for simplicity)
+#include <gtk/gtk.h>
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const std::string MEMORY_FILE = "isha_memory.json";
+const std::string CUSTOM_ACTIONS_FILE = "isha_custom_actions.json";
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+std::string toLower(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+    return result;
+}
+
+std::string trim(const std::string& str) {
+    size_t start = str.find_first_not_of(" \t\n\r");
+    size_t end = str.find_last_not_of(" \t\n\r");
+    if (start == std::string::npos) return "";
+    return str.substr(start, end - start + 1);
+}
+
+std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(str);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+bool stringContains(const std::string& str, const std::string& substr) {
+    return str.find(substr) != std::string::npos;
+}
+
+// ============================================================================
+// KNOWLEDGE BASE
+// ============================================================================
+
+std::map<std::string, std::vector<std::string>> REPLIES = {
+    {"hello", {"Hello! Kaise ho?", "Hi! Main Isha bol rahi hu 😊", "Hey! Kya help chahiye?"}},
+    {"hi", {"Hi! Kya help chahiye?", "Hello! Isha yahan hai.", "Hey! Batao kya karna hai."}},
+    {"thanks", {"Welcome!", "Koi baat nahi 😊", "My pleasure!"}},
+    {"thank you", {"Welcome!", "Khushi hui help karke 😊", "No problem!"}},
+    {"your name", {"Mera naam Isha hai.", "Main Isha hu — Intelligent System for Human Assistance."}},
+    {"who are you", {"Main Isha hu, tumhari personal AI assistant!", "Main Isha — tumhari smart voice assistant."}},
+    {"how are you", {"Main bilkul theek hu! Aap batao?", "Mast hu! Aapki service mein hazir hu 😊"}},
+    {"good morning", {"Good morning! Aaj ka din acha ho 🌅", "Good morning! Kya help chahiye?"}},
+    {"good night", {"Good night! Sweet dreams 🌙", "Good night! Kal milte hain."}},
+    {"bye", {"Bye! Take care 👋", "Alvida! Jab zaroorat ho, call karna."}},
+    {"what can you do", {"Main aapke liye: apps open kar sakti hu, search kar sakti hu, music play kar sakti hu, shortcuts execute kar sakti hu aur bahut kuch!"}},
+    {"help", {"Main kya kar sakti hu: apps open, settings change, music play, screenshot, math solve, aur bahut kuch. Batao kya chahiye!"}}
+};
+
+std::map<std::string, std::string> APPS = {
+    {"calculator", "calc"},
+    {"notepad", "notepad"},
+    {"paint", "mspaint"},
+    {"cmd", "cmd"},
+    {"command prompt", "cmd"},
+    {"chrome", "start chrome"},
+    {"google chrome", "start chrome"},
+    {"explorer", "explorer"},
+    {"file explorer", "explorer"},
+    {"task manager", "taskmgr"}
+};
+
+std::map<std::string, std::string> SETTINGS = {
+    {"display", "ms-settings:display"},
+    {"sound", "ms-settings:sound"},
+    {"wifi", "ms-settings:network-wifi"},
+    {"bluetooth", "ms-settings:bluetooth"}
+};
+
+std::map<std::string, std::vector<std::string>> SHORTCUTS = {
+    {"select all", {"ctrl", "a"}},
+    {"copy", {"ctrl", "c"}},
+    {"paste", {"ctrl", "v"}},
+    {"cut", {"ctrl", "x"}},
+    {"undo", {"ctrl", "z"}}
+};
+
+std::map<std::string, std::string> WEBSITES = {
+    {"youtube", "https://www.youtube.com"},
+    {"google", "https://www.google.com"},
+    {"github", "https://www.github.com"},
+    {"gmail", "https://mail.google.com"},
+    {"wikipedia", "https://www.wikipedia.org"}
+};
+
+// ============================================================================
+// MEMORY SYSTEM
+// ============================================================================
+
+class Memory {
+private:
+    std::map<std::string, std::string> data;
+    std::mutex mtx;
+    
+    void load() {
+        std::ifstream file(MEMORY_FILE);
+        if (!file.is_open()) return;
+        
+        std::string line;
+        while (std::getline(file, line)) {
+            size_t colonPos = line.find(':');
+            if (colonPos != std::string::npos) {
+                std::string key = trim(line.substr(0, colonPos));
+                std::string value = trim(line.substr(colonPos + 1));
+                data[key] = value;
+            }
+        }
+        file.close();
+    }
+    
+    void save() {
+        std::ofstream file(MEMORY_FILE);
+        if (!file.is_open()) return;
+        
+        for (const auto& pair : data) {
+            file << pair.first << ": " << pair.second << "\n";
+        }
+        file.close();
+    }
+    
+public:
+    Memory() {
+        load();
+    }
+    
+    void remember(const std::string& key, const std::string& value) {
+        std::lock_guard<std::mutex> lock(mtx);
+        data[key] = value;
+        save();
+    }
+    
+    std::string recall(const std::string& key) {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = data.find(key);
+        if (it != data.end()) {
+            return it->second;
+        }
+        return "";
+    }
+    
+    void forget(const std::string& key) {
+        std::lock_guard<std::mutex> lock(mtx);
+        data.erase(key);
+        save();
+    }
+};
+
+Memory memory;
+
+// ============================================================================
+// TTS ENGINE
+// ============================================================================
+
+#ifdef _WIN32
+void speakWindows(const std::string& text) {
+    // Windows SAPI or simple beep for demo
+    std::wstring wtext(text.begin(), text.end());
+    // Simple Windows speech using built-in voice
+    // This requires Windows SDK or can use PowerShell
+    std::string command = "powershell -Command \"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('" + text + "');\"";
+    system(command.c_str());
+}
+#else
+void speakLinux(const std::string& text) {
+    // Linux: use espeak
+    std::string command = "espeak \"" + text + "\"";
+    system(command.c_str());
+}
+#endif
+
+void speak(const std::string& text) {
+    std::cout << "[ISHA] " << text << std::endl;
+    
+#ifdef _WIN32
+    std::thread([text]() {
+        speakWindows(text);
+    }).detach();
+#else
+    std::thread([text]() {
+        speakLinux(text);
+    }).detach();
+#endif
+}
+
+// ============================================================================
+// DATE/TIME FUNCTIONS
+// ============================================================================
+
+std::string getCurrentTime() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    
+    char buffer[100];
+    std::strftime(buffer, sizeof(buffer), "%I:%M %p", local_time);
+    return std::string(buffer);
+}
+
+std::string getCurrentDate() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    
+    char buffer[100];
+    std::strftime(buffer, sizeof(buffer), "%d %B %Y", local_time);
+    return std::string(buffer);
+}
+
+std::string getCurrentDay() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    
+    char buffer[100];
+    std::strftime(buffer, sizeof(buffer), "%A", local_time);
+    return std::string(buffer);
+}
+
+std::string getTimeGreeting() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm* local_time = std::localtime(&now_time);
+    int hour = local_time->tm_hour;
+    
+    if (hour >= 5 && hour < 12) return "Good morning";
+    else if (hour >= 12 && hour < 17) return "Good afternoon";
+    else if (hour >= 17 && hour < 21) return "Good evening";
+    else return "Good night";
+}
+
+// ============================================================================
+// APP OPENING FUNCTIONS
+// ============================================================================
+
+void openApp(const std::string& appName) {
+#ifdef _WIN32
+    auto it = APPS.find(toLower(appName));
+    if (it != APPS.end()) {
+        system(it->second.c_str());
+    } else {
+        std::string command = "start " + appName;
+        system(command.c_str());
+    }
+#else
+    std::string command = appName + " &";
+    system(command.c_str());
+#endif
+}
+
+void openWebsite(const std::string& siteName) {
+    std::string url = WEBSITES[toLower(siteName)];
+#ifdef _WIN32
+    ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOW);
+#else
+    std::string command = "xdg-open " + url;
+    system(command.c_str());
+#endif
+}
+
+void openSetting(const std::string& settingName) {
+#ifdef _WIN32
+    auto it = SETTINGS.find(toLower(settingName));
+    if (it != SETTINGS.end()) {
+        std::string command = "start " + it->second;
+        system(command.c_str());
+    }
+#endif
+}
+
+// ============================================================================
+// SYSTEM ACTIONS
+// ============================================================================
+
+void takeScreenshot() {
+#ifdef _WIN32
+    // Simulate Win+Shift+S
+    INPUT inputs[3] = {};
+    
+    // Win key down
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_LWIN;
+    
+    // Shift key down
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = VK_SHIFT;
+    
+    // S key
+    inputs[2].type = INPUT_KEYBOARD;
+    inputs[2].ki.wVk = 'S';
+    
+    SendInput(3, inputs, sizeof(INPUT));
+    
+    // Release keys
+    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(1, &inputs[2], sizeof(INPUT));
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(1, &inputs[1], sizeof(INPUT));
+    inputs[0].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(1, &inputs[0], sizeof(INPUT));
+#else
+    std::string command = "gnome-screenshot -i";
+    system(command.c_str());
+#endif
+}
+
+void controlVolume(const std::string& action) {
+#ifdef _WIN32
+    if (action == "up") {
+        keybd_event(VK_VOLUME_UP, 0, 0, 0);
+        keybd_event(VK_VOLUME_UP, 0, KEYEVENTF_KEYUP, 0);
+    } else if (action == "down") {
+        keybd_event(VK_VOLUME_DOWN, 0, 0, 0);
+        keybd_event(VK_VOLUME_DOWN, 0, KEYEVENTF_KEYUP, 0);
+    } else if (action == "mute") {
+        keybd_event(VK_VOLUME_MUTE, 0, 0, 0);
+        keybd_event(VK_VOLUME_MUTE, 0, KEYEVENTF_KEYUP, 0);
+    }
+#endif
+}
+
+// ============================================================================
+// MATH SOLVER (Basic)
+// ============================================================================
+
+bool isOperator(char c) {
+    return c == '+' || c == '-' || c == '*' || c == '/';
+}
+
+int precedence(char op) {
+    if (op == '+' || op == '-') return 1;
+    if (op == '*' || op == '/') return 2;
+    return 0;
+}
+
+double applyOp(double a, double b, char op) {
+    switch(op) {
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': return a / b;
+        default: return 0;
+    }
+}
+
+double evaluateExpression(const std::string& expression) {
+    std::vector<double> values;
+    std::vector<char> ops;
+    
+    for (size_t i = 0; i < expression.length(); i++) {
+        if (expression[i] == ' ') continue;
+        
+        if (isdigit(expression[i])) {
+            double val = 0;
+            while (i < expression.length() && isdigit(expression[i])) {
+                val = (val * 10) + (expression[i] - '0');
+                i++;
+            }
+            values.push_back(val);
+            i--;
+        }
+        else if (expression[i] == '(') {
+            ops.push_back(expression[i]);
+        }
+        else if (expression[i] == ')') {
+            while (!ops.empty() && ops.back() != '(') {
+                double val2 = values.back(); values.pop_back();
+                double val1 = values.back(); values.pop_back();
+                char op = ops.back(); ops.pop_back();
+                values.push_back(applyOp(val1, val2, op));
+            }
+            if (!ops.empty()) ops.pop_back();
+        }
+        else if (isOperator(expression[i])) {
+            while (!ops.empty() && precedence(ops.back()) >= precedence(expression[i])) {
+                double val2 = values.back(); values.pop_back();
+                double val1 = values.back(); values.pop_back();
+                char op = ops.back(); ops.pop_back();
+                values.push_back(applyOp(val1, val2, op));
+            }
+            ops.push_back(expression[i]);
+        }
+    }
+    
+    while (!ops.empty()) {
+        double val2 = values.back(); values.pop_back();
+        double val1 = values.back(); values.pop_back();
+        char op = ops.back(); ops.pop_back();
+        values.push_back(applyOp(val1, val2, op));
+    }
+    
+    return values.back();
+}
+
+std::string solveMath(const std::string& expr) {
+    try {
+        std::string clean = std::regex_replace(expr, std::regex("×"), "*");
+        clean = std::regex_replace(clean, std::regex("÷"), "/");
+        clean = std::regex_replace(clean, std::regex("[^0-9+\\-*/()]"), "");
+        
+        double result = evaluateExpression(clean);
+        std::stringstream ss;
+        ss << "Answer: " << result << " 🧮";
+        return ss.str();
+    } catch (...) {
+        return "Math solve nahi ho paya.";
+    }
+}
+
+// ============================================================================
+// ALARM SYSTEM
+// ============================================================================
+
+void setAlarm(const std::string& timeStr) {
+    std::thread([timeStr]() {
+        speak("Alarm set for " + timeStr);
+        
+        while (true) {
+            std::string currentTime = getCurrentTime();
+            if (currentTime == timeStr) {
+                speak("Alarm baj raha hai! Wake up! ⏰");
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(30));
+        }
+    }).detach();
+}
+
+// ============================================================================
+// REMINDER SYSTEM
+// ============================================================================
+
+void setReminder(int seconds, const std::string& message) {
+    std::thread([seconds, message]() {
+        std::this_thread::sleep_for(std::chrono::seconds(seconds));
+        speak("Reminder: " + message);
+    }).detach();
+}
+
+// ============================================================================
+// IP ADDRESS
+// ============================================================================
+
+std::string getIPAddress() {
+#ifdef _WIN32
+    // Simple Windows IP detection (simplified)
+    return "127.0.0.1";
+#else
+    // Linux: get hostname
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+    return std::string(hostname);
+#endif
+}
+
+// ============================================================================
+// COMMAND PROCESSOR
+// ============================================================================
+
+std::string processCommand(const std::string& raw) {
+    std::string cmd = toLower(trim(raw));
+    
+    if (cmd.empty()) return "";
+    
+    // Memory commands
+    if (cmd.find("remember ") == 0) {
+        std::string rest = cmd.substr(9);
+        size_t isPos = rest.find(" is ");
+        if (isPos != std::string::npos) {
+            std::string key = rest.substr(0, isPos);
+            std::string value = rest.substr(isPos + 4);
+            memory.remember(key, value);
+            return "Yaad rakh liya: " + key + " = " + value;
+        }
+        return "Format: remember [key] is [value]";
+    }
+    
+    if (cmd.find("recall ") == 0 || cmd.find("what is ") == 0) {
+        std::string key = cmd.substr(cmd.find_last_of(' ') + 1);
+        std::string val = memory.recall(key);
+        if (!val.empty()) {
+            return key + " = " + val;
+        }
+        return "Mujhe '" + key + "' yaad nahi.";
+    }
+    
+    // Date/Time
+    if (stringContains(cmd, "time") || stringContains(cmd, "baja")) {
+        return "Abhi " + getCurrentTime() + " baj rahe hain.";
+    }
+    
+    if (stringContains(cmd, "date")) {
+        return "Aaj " + getCurrentDate() + " hai.";
+    }
+    
+    if (stringContains(cmd, "day") || stringContains(cmd, "din")) {
+        return "Aaj " + getCurrentDay() + " hai.";
+    }
+    
+    // Greetings
+    for (const auto& pair : REPLIES) {
+        if (stringContains(cmd, pair.first)) {
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(0, pair.second.size() - 1);
+            return pair.second[dis(gen)];
+        }
+    }
+    
+    // Math
+    if (stringContains(cmd, "+") || stringContains(cmd, "-") || 
+        stringContains(cmd, "*") || stringContains(cmd, "/")) {
+        return solveMath(cmd);
+    }
+    
+    // Screenshot
+    if (stringContains(cmd, "screenshot")) {
+        takeScreenshot();
+        return "Screenshot le liya! 📸";
+    }
+    
+    // Volume controls
+    if (stringContains(cmd, "volume up") || stringContains(cmd, "volume badha")) {
+        controlVolume("up");
+        return "Volume badha diya 🔊";
+    }
+    
+    if (stringContains(cmd, "volume down") || stringContains(cmd, "volume kam")) {
+        controlVolume("down");
+        return "Volume kam kar diya 🔉";
+    }
+    
+    if (stringContains(cmd, "mute")) {
+        controlVolume("mute");
+        return "Mute kar diya 🔇";
+    }
+    
+    // Open apps
+    if (stringContains(cmd, "open ") || stringContains(cmd, "kholo")) {
+        for (const auto& app : APPS) {
+            if (stringContains(cmd, app.first)) {
+                openApp(app.first);
+                return "'" + app.first + "' open kar raha hu 🚀";
+            }
+        }
+        
+        for (const auto& site : WEBSITES) {
+            if (stringContains(cmd, site.first)) {
+                openWebsite(site.first);
+                return site.first + " open kar raha hu 🌐";
+            }
+        }
+    }
+    
+    // Open settings
+    if (stringContains(cmd, "setting")) {
+        for (const auto& setting : SETTINGS) {
+            if (stringContains(cmd, setting.first)) {
+                openSetting(setting.first);
+                return "'" + setting.first + "' settings open kar raha hu ⚙️";
+            }
+        }
+    }
+    
+    // Alarm
+    if (stringContains(cmd, "alarm")) {
+        std::regex timeRegex(R"((\d{1,2}:\d{2}))");
+        std::smatch match;
+        if (std::regex_search(cmd, match, timeRegex)) {
+            setAlarm(match[1]);
+            return "Alarm set ho gaya " + match[1].str() + " ke liye ⏰";
+        }
+        return "Alarm time batao, jaise: alarm 07:30";
+    }
+    
+    // Reminder
+    if (stringContains(cmd, "remind") || stringContains(cmd, "yaad dilao")) {
+        std::regex secondsRegex(R"((\d+)\s*second)");
+        std::smatch match;
+        if (std::regex_search(cmd, match, secondsRegex)) {
+            int seconds = std::stoi(match[1]);
+            std::string message = "Reminder!";
+            setReminder(seconds, message);
+            return "Reminder set ho gaya " + match[1].str() + " seconds baad 🔔";
+        }
+        return "Format: 30 second baad yaad dilao [message]";
+    }
+    
+    // IP Address
+    if (stringContains(cmd, "ip")) {
+        return "Aapka IP address hai: " + getIPAddress() + " 🌐";
+    }
+    
+    // Unknown
+    std::vector<std::string> defaults = {
+        "Samajh nahi aaya. Thoda aur clearly batao?",
+        "Hmm, ye mujhe pata nahi. Google search karein?",
+        "Iska jawab mujhe nahi pata abhi."
+    };
+    
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, defaults.size() - 1);
+    return defaults[dis(gen)];
+}
+
+// ============================================================================
+// GTK GUI
+// ============================================================================
+
+class IshaGUI {
+private:
+    GtkWidget* window;
+    GtkWidget* entry;
+    GtkWidget* button;
+    GtkWidget* label;
+    GtkWidget* micButton;
+    bool micActive;
+    
+    static void on_send_clicked(GtkButton* button, gpointer data) {
+        IshaGUI* gui = static_cast<IshaGUI*>(data);
+        const gchar* text = gtk_entry_get_text(GTK_ENTRY(gui->entry));
+        
+        if (text && strlen(text) > 0) {
+            std::string response = processCommand(text);
+            
+            // Update label
+            std::string display = "You: " + std::string(text) + "\nIsha: " + response;
+            gtk_label_set_text(GTK_LABEL(gui->label), display.c_str());
+            
+            // Clear entry
+            gtk_entry_set_text(GTK_ENTRY(gui->entry), "");
+            
+            // Speak response
+            speak(response);
+        }
+    }
+    
+    static void on_entry_activate(GtkEntry* entry, gpointer data) {
+        IshaGUI* gui = static_cast<IshaGUI*>(data);
+        on_send_clicked(nullptr, data);
+    }
+    
+    static void on_mic_clicked(GtkButton* button, gpointer data) {
+        IshaGUI* gui = static_cast<IshaGUI*>(data);
+        // Simplified voice input (would require speech recognition library)
+        // For now, just toggle visual feedback
+        gui->micActive = !gui->micActive;
+        
+        if (gui->micActive) {
+            gtk_button_set_label(GTK_BUTTON(gui->micButton), "🔴 Stop");
+            speak("Listening...");
+        } else {
+            gtk_button_set_label(GTK_BUTTON(gui->micButton), "🎤");
+        }
+    }
+    
+public:
+    IshaGUI() : micActive(false) {
+        gtk_init(nullptr, nullptr);
+        
+        window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_window_set_title(GTK_WINDOW(window), "ISHA - Intelligent Assistant");
+        gtk_window_set_default_size(GTK_WINDOW(window), 500, 400);
+        gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+        gtk_container_set_border_width(GTK_CONTAINER(window), 10);
+        
+        g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), nullptr);
+        
+        // Main vertical box
+        GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+        gtk_container_add(GTK_CONTAINER(window), vbox);
+        
+        // Title
+        GtkWidget* title = gtk_label_new(nullptr);
+        std::string titleText = "ISHA - Intelligent System for Human Assistance\n" + getTimeGreeting() + "!";
+        gtk_label_set_text(GTK_LABEL(title), titleText.c_str());
+        gtk_box_pack_start(GTK_BOX(vbox), title, FALSE, FALSE, 0);
+        
+        // Response label
+        label = gtk_label_new("Ask me anything...");
+        gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
+        gtk_widget_set_size_request(label, 480, 200);
+        gtk_box_pack_start(GTK_BOX(vbox), label, TRUE, TRUE, 0);
+        
+        // Input area
+        GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+        gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
+        
+        entry = gtk_entry_new();
+        gtk_widget_set_size_request(entry, 380, 30);
+        gtk_box_pack_start(GTK_BOX(hbox), entry, TRUE, TRUE, 0);
+        g_signal_connect(entry, "activate", G_CALLBACK(on_entry_activate), this);
+        
+        button = gtk_button_new_with_label("Send");
+        gtk_box_pack_start(GTK_BOX(hbox), button, FALSE, FALSE, 0);
+        g_signal_connect(button, "clicked", G_CALLBACK(on_send_clicked), this);
+        
+        micButton = gtk_button_new_with_label("🎤");
+        gtk_box_pack_start(GTK_BOX(hbox), micButton, FALSE, FALSE, 0);
+        g_signal_connect(micButton, "clicked", G_CALLBACK(on_mic_clicked), this);
+        
+        gtk_widget_show_all(window);
+    }
+    
+    void run() {
+        gtk_main();
+    }
+};
+
+// ============================================================================
+// MAIN FUNCTION
+// ============================================================================
+
+int main(int argc, char* argv[]) {
+    std::cout << "╔══════════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║          ISHA - Intelligent System for Human Assistance          ║" << std::endl;
+    std::cout << "║                     C++ Desktop Assistant                        ║" << std::endl;
+    std::cout << "╚══════════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << std::endl;
+    
+    // Check for command line arguments (headless mode)
+    if (argc > 1 && std::string(argv[1]) == "--cli") {
+        std::cout << "ISHA CLI Mode - Type 'quit' to exit" << std::endl;
+        std::string input;
+        
+        while (true) {
+            std::cout << "You: ";
+            std::getline(std::cin, input);
+            
+            if (input == "quit" || input == "exit" || input == "bye") {
+                speak("Goodbye! Take care 👋");
+                break;
+            }
+            
+            std::string response = processCommand(input);
+            std::cout << "ISHA: " << response << std::endl;
+            speak(response);
+        }
+    } else {
+        // GUI Mode
+        IshaGUI gui;
+        speak(getTimeGreeting() + "! Main Isha hu. Aapki kya help kar sakti hu? 😊");
+        gui.run();
+    }
+    
+    return 0;
+}
