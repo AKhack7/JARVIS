@@ -1,0 +1,1981 @@
+"""
+╔══════════════════════════════════════════════════════════════════╗
+║          ISHA - Intelligent System for Human Assistance          ║
+║                     Complete Python Assistant                    ║
+║                         Version 1.1                              ║
+║                    (with API Integration)                        ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Requirements (install these):
+    pip install pyttsx3 SpeechRecognition pyautogui requests beautifulsoup4
+    pip install pywhatkit opencv-python mediapipe sympy pillow speedtest-cli
+
+Run: python isha_assistant.py
+"""
+
+# ═══════════════════════════════════════════════════════════════
+# IMPORTS
+# ═══════════════════════════════════════════════════════════════
+
+import tkinter as tk
+from tkinter import ttk, font as tkfont
+import threading
+import random
+import os
+import sys
+import time
+import math
+import socket
+import webbrowser
+import subprocess
+import json
+import logging
+from datetime import datetime
+from difflib import get_close_matches
+
+# Optional imports (graceful fallback if not installed)
+try:
+    import pyttsx3
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+    print("[WARN] pyttsx3 not found. Voice output disabled.")
+
+try:
+    import speech_recognition as sr
+    STT_AVAILABLE = True
+except ImportError:
+    STT_AVAILABLE = False
+    print("[WARN] SpeechRecognition not found. Voice input disabled.")
+
+try:
+    import pyautogui
+    pyautogui.FAILSAFE = False
+    PYAUTOGUI_AVAILABLE = True
+except ImportError:
+    PYAUTOGUI_AVAILABLE = False
+
+try:
+    import requests
+    from bs4 import BeautifulSoup
+    WEB_AVAILABLE = True
+except ImportError:
+    WEB_AVAILABLE = False
+
+try:
+    import pywhatkit as kit
+    YT_AVAILABLE = True
+except ImportError:
+    YT_AVAILABLE = False
+
+try:
+    from sympy import sympify
+    MATH_AVAILABLE = True
+except ImportError:
+    MATH_AVAILABLE = False
+
+try:
+    import cv2
+    import mediapipe as mp
+    import numpy as np
+    GESTURE_AVAILABLE = True
+except ImportError:
+    GESTURE_AVAILABLE = False
+    print("[WARN] OpenCV/MediaPipe not found. Gesture mode disabled.")
+
+try:
+    import speedtest
+    SPEED_AVAILABLE = True
+except ImportError:
+    SPEED_AVAILABLE = False
+
+
+# ═══════════════════════════════════════════════════════════════
+# LOGGING
+# ═══════════════════════════════════════════════════════════════
+
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+log = logging.getLogger("ISHA")
+
+
+# ═══════════════════════════════════════════════════════════════
+# API CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+
+# Replace these with your actual API keys
+API_CONFIG = {
+    "weather": {
+        "key": "",  # Get from OpenWeatherMap: https://openweathermap.org/api
+        "url": "http://api.openweathermap.org/data/2.5/weather",
+        "enabled": False
+    },
+    "news": {
+        "key": "",  # Get from NewsAPI: https://newsapi.org/
+        "url": "https://newsapi.org/v2/top-headlines",
+        "enabled": False
+    },
+    "joke": {
+        "url": "https://v2.jokeapi.dev/joke/Any",
+        "enabled": True
+    },
+    "quote": {
+        "url": "https://api.quotable.io/random",
+        "enabled": True
+    },
+    "cat_fact": {
+        "url": "https://catfact.ninja/fact",
+        "enabled": True
+    },
+    "advice": {
+        "url": "https://api.adviceslip.com/advice",
+        "enabled": True
+    },
+    "random_user": {
+        "url": "https://randomuser.me/api/",
+        "enabled": True
+    },
+    "chuck_norris": {
+        "url": "https://api.chucknorris.io/jokes/random",
+        "enabled": True
+    },
+    "space": {
+        "url": "http://api.open-notify.org/astros.json",
+        "enabled": True
+    },
+    "dictionary": {
+        "url": "https://api.dictionaryapi.dev/api/v2/entries/en/",
+        "enabled": True
+    }
+}
+
+# API key file
+API_KEYS_FILE = "isha_api_keys.json"
+
+def load_api_keys():
+    """Load API keys from file"""
+    try:
+        if os.path.exists(API_KEYS_FILE):
+            with open(API_KEYS_FILE, "r") as f:
+                keys = json.load(f)
+                for service, config in API_CONFIG.items():
+                    if service in keys:
+                        config["key"] = keys[service]
+                        if config["key"]:
+                            config["enabled"] = True
+    except Exception as e:
+        log.warning(f"Error loading API keys: {e}")
+
+def save_api_keys():
+    """Save API keys to file"""
+    try:
+        keys = {}
+        for service, config in API_CONFIG.items():
+            if config.get("key"):
+                keys[service] = config["key"]
+        with open(API_KEYS_FILE, "w") as f:
+            json.dump(keys, f, indent=2)
+    except Exception as e:
+        log.warning(f"Error saving API keys: {e}")
+
+load_api_keys()
+
+
+# ═══════════════════════════════════════════════════════════════
+# API HANDLER CLASS
+# ═══════════════════════════════════════════════════════════════
+
+class APIHandler:
+    """Handles all API calls with proper error handling"""
+    
+    @staticmethod
+    def get_weather(city: str) -> str:
+        """Get weather information for a city"""
+        config = API_CONFIG["weather"]
+        if not config["enabled"] or not config["key"]:
+            return "Weather API not configured. Please add API key in settings."
+        
+        try:
+            params = {
+                "q": city,
+                "appid": config["key"],
+                "units": "metric"
+            }
+            response = requests.get(config["url"], params=params, timeout=5)
+            data = response.json()
+            
+            if response.status_code == 200:
+                temp = data["main"]["temp"]
+                feels_like = data["main"]["feels_like"]
+                humidity = data["main"]["humidity"]
+                description = data["weather"][0]["description"]
+                city_name = data["name"]
+                
+                return f"{city_name} mein {temp}°C temperature hai, feels like {feels_like}°C. {description.capitalize()}. Humidity {humidity}% hai. 🌤️"
+            else:
+                return f"Weather info nahi mili. City name sahi hai? {data.get('message', '')}"
+        except Exception as e:
+            log.error(f"Weather API error: {e}")
+            return "Weather check nahi ho paya. Internet check karo."
+    
+    @staticmethod
+    def get_news(category: str = "general") -> str:
+        """Get top news headlines"""
+        config = API_CONFIG["news"]
+        if not config["enabled"] or not config["key"]:
+            return "News API not configured. Please add API key in settings."
+        
+        try:
+            params = {
+                "apiKey": config["key"],
+                "category": category,
+                "country": "in",
+                "pageSize": 5
+            }
+            response = requests.get(config["url"], params=params, timeout=5)
+            data = response.json()
+            
+            if response.status_code == 200 and data.get("articles"):
+                articles = data["articles"][:3]
+                news_list = []
+                for i, article in enumerate(articles, 1):
+                    title = article["title"]
+                    source = article["source"]["name"]
+                    news_list.append(f"{i}. {title} ({source})")
+                
+                return "Top news headlines:\n" + "\n".join(news_list) + "\n\n📰 Full details? search karo specific news."
+            else:
+                return "News nahi mili. Try again later."
+        except Exception as e:
+            log.error(f"News API error: {e}")
+            return "News fetch nahi ho paya."
+    
+    @staticmethod
+    def get_joke() -> str:
+        """Get a random joke"""
+        config = API_CONFIG["joke"]
+        try:
+            response = requests.get(config["url"], params={"type": "twopart"}, timeout=5)
+            data = response.json()
+            
+            if data.get("type") == "twopart":
+                setup = data.get("setup", "")
+                delivery = data.get("delivery", "")
+                return f"{setup}\n{delivery}"
+            elif data.get("type") == "single":
+                return data.get("joke", "")
+            else:
+                return "Joke nahi mila 😅"
+        except Exception as e:
+            log.error(f"Joke API error: {e}")
+            return random.choice(["Mujhe koi joke yaad nahi aaya!", "Aap hi koi suna do!", "Joke time! Kya aapko pata hai main kya hu? Aapki assistant! 😄"])
+    
+    @staticmethod
+    def get_quote() -> str:
+        """Get an inspirational quote"""
+        config = API_CONFIG["quote"]
+        try:
+            response = requests.get(config["url"], timeout=5)
+            data = response.json()
+            
+            if data.get("content"):
+                author = data.get("author", "Unknown")
+                return f"✨ {data['content']}\n— {author}"
+            else:
+                return "Quote nahi mila."
+        except Exception as e:
+            log.error(f"Quote API error: {e}")
+            return "Aaj ka motivation: 'Believe in yourself!' 🌟"
+    
+    @staticmethod
+    def get_cat_fact() -> str:
+        """Get a random cat fact"""
+        config = API_CONFIG["cat_fact"]
+        try:
+            response = requests.get(config["url"], timeout=5)
+            data = response.json()
+            return f"🐱 Cat Fact: {data.get('fact', 'No fact found')}"
+        except Exception as e:
+            log.error(f"Cat fact API error: {e}")
+            return "Cats are mysterious creatures! 🐱"
+    
+    @staticmethod
+    def get_advice() -> str:
+        """Get random advice"""
+        config = API_CONFIG["advice"]
+        try:
+            response = requests.get(config["url"], timeout=5)
+            data = response.json()
+            slip = data.get("slip", {})
+            return f"💡 Advice: {slip.get('advice', 'No advice found')}"
+        except Exception as e:
+            log.error(f"Advice API error: {e}")
+            return "My advice: Take a deep breath and smile! 😊"
+    
+    @staticmethod
+    def get_chuck_norris_joke() -> str:
+        """Get Chuck Norris joke"""
+        config = API_CONFIG["chuck_norris"]
+        try:
+            response = requests.get(config["url"], timeout=5)
+            data = response.json()
+            return f"💪 Chuck Norris says: {data.get('value', 'He is the best!')}"
+        except Exception as e:
+            log.error(f"Chuck Norris API error: {e}")
+            return "Chuck Norris doesn't need APIs, APIs call him!"
+    
+    @staticmethod
+    def get_astronauts() -> str:
+        """Get number of astronauts in space"""
+        config = API_CONFIG["space"]
+        try:
+            response = requests.get(config["url"], timeout=5)
+            data = response.json()
+            count = data.get("number", 0)
+            people = data.get("people", [])
+            names = [p["name"] for p in people[:3]]
+            return f"🌌 Space mein {count} astronaut hain. {', '.join(names)} aur doosre. Amazing!"
+        except Exception as e:
+            log.error(f"Space API error: {e}")
+            return "Space information nahi mili. Maybe astronauts are busy! 🚀"
+    
+    @staticmethod
+    def get_definition(word: str) -> str:
+        """Get dictionary definition"""
+        config = API_CONFIG["dictionary"]
+        try:
+            response = requests.get(f"{config['url']}{word}", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    meanings = data[0].get("meanings", [])
+                    if meanings:
+                        definition = meanings[0].get("definitions", [{}])[0].get("definition", "No definition found")
+                        part_of_speech = meanings[0].get("partOfSpeech", "")
+                        return f"📖 {word}: {definition} ({part_of_speech})"
+            return f"'{word}' ka definition nahi mila. Word sahi hai?"
+        except Exception as e:
+            log.error(f"Dictionary API error: {e}")
+            return "Dictionary check nahi ho paya."
+    
+    @staticmethod
+    def get_random_user() -> str:
+        """Get random user information"""
+        config = API_CONFIG["random_user"]
+        try:
+            response = requests.get(config["url"], timeout=5)
+            data = response.json()
+            if data.get("results"):
+                user = data["results"][0]
+                name = f"{user['name']['first']} {user['name']['last']}"
+                country = user["location"]["country"]
+                email = user["email"]
+                return f"👤 Random user: {name} from {country}. Email: {email}"
+            return "Random user nahi mila."
+        except Exception as e:
+            log.error(f"Random user API error: {e}")
+            return "Random user fetch nahi ho paya."
+
+
+# ═══════════════════════════════════════════════════════════════
+# KNOWLEDGE BASE (replies, apps, settings, shortcuts)
+# ═══════════════════════════════════════════════════════════════
+
+REPLIES = {
+    "hello": ["Hello! Kaise ho?", "Hi! Main Isha bol rahi hu 😊", "Hey! Kya help chahiye?"],
+    "hi": ["Hi! Kya help chahiye?", "Hello! Isha yahan hai.", "Hey! Batao kya karna hai."],
+    "thanks": ["Welcome!", "Koi baat nahi 😊", "My pleasure!"],
+    "thank you": ["Welcome!", "Khushi hui help karke 😊", "No problem!"],
+    "your name": ["Mera naam Isha hai.", "Main Isha hu — Intelligent System for Human Assistance."],
+    "who are you": ["Main Isha hu, tumhari personal AI assistant!", "Main Isha — tumhari smart voice assistant."],
+    "how are you": ["Main bilkul theek hu! Aap batao?", "Mast hu! Aapki service mein hazir hu 😊"],
+    "good morning": ["Good morning! Aaj ka din acha ho 🌅", "Good morning! Kya help chahiye?"],
+    "good night": ["Good night! Sweet dreams 🌙", "Good night! Kal milte hain."],
+    "bye": ["Bye! Take care 👋", "Alvida! Jab zaroorat ho, call karna."],
+    "what can you do": ["Main aapke liye: apps open kar sakti hu, search kar sakti hu, music play kar sakti hu, shortcuts execute kar sakti hu, API se weather/news/jokes le sakti hu aur bahut kuch!"],
+    "help": ["Main kya kar sakti hu: apps open, settings change, music play, screenshot, math solve, weather check, news dekhna, jokes sunana, aur bahut kuch. Batao kya chahiye!"],
+}
+
+APPS = {
+    "outlook":          "start outlook",
+    "calculator":       "calc",
+    "calendar":         "start outlookcal:",
+    "camera":           "start microsoft.windows.camera:",
+    "clock":            "start ms-clock:",
+    "chrome":           "start chrome",
+    "google chrome":    "start chrome",
+    "notepad":          "notepad",
+    "paint":            "mspaint",
+    "word":             "start winword",
+    "excel":            "start excel",
+    "powerpoint":       "start powerpnt",
+    "mail":             "start outlookmail:",
+    "maps":             "start bingmaps:",
+    "edge":             "start msedge",
+    "microsoft edge":   "start msedge",
+    "store":            "start ms-windows-store:",
+    "microsoft store":  "start ms-windows-store:",
+    "photos":           "start ms-photos:",
+    "skype":            "start skype:",
+    "onedrive":         "start onedrive",
+    "onenote":          "start onenote:",
+    "sticky notes":     "start ms-stickynotes:",
+    "snip":             "start ms-screenclip:",
+    "snip & sketch":    "start ms-screenclip:",
+    "weather":          "start bingweather:",
+    "xbox":             "start xbox:",
+    "xbox game bar":    "start ms-gamebar:",
+    "voice recorder":   "start ms-voicerecorder:",
+    "3d viewer":        "start ms-3dviewer:",
+    "movies":           "start mswindowsvideo:",
+    "movies & tv":      "start mswindowsvideo:",
+    "groove music":     "start mswindowsmusic:",
+    "cortana":          "start cortana:",
+    "feedback hub":     "start feedback-hub:",
+    "get help":         "start ms-contact-support:",
+    "windows security": "start windowsdefender:",
+    "task manager":     "taskmgr",
+    "file explorer":    "explorer",
+    "explorer":         "explorer",
+    "cmd":              "cmd",
+    "command prompt":   "cmd",
+    "powershell":       "powershell",
+    "tally":            "start tally",
+    "tally prime":      "start tally",
+    "paint 3d":         "start ms-paint3d:",
+    "copilot":          "start ms-copilot:",
+    "office":           "start officehub:",
+}
+
+SETTINGS = {
+    "display":              "ms-settings:display",
+    "sound":                "ms-settings:sound",
+    "notifications":        "ms-settings:notifications",
+    "focus assist":         "ms-settings:quiethours",
+    "power":                "ms-settings:powersleep",
+    "power & sleep":        "ms-settings:powersleep",
+    "storage":              "ms-settings:storagesense",
+    "multitasking":         "ms-settings:multitasking",
+    "clipboard":            "ms-settings:clipboard",
+    "remote desktop":       "ms-settings:remotedesktop",
+    "about":                "ms-settings:about",
+    "bluetooth":            "ms-settings:bluetooth",
+    "printers":             "ms-settings:printers",
+    "mouse":                "ms-settings:mousetouchpad",
+    "typing":               "ms-settings:typing",
+    "autoplay":             "ms-settings:autoplay",
+    "usb":                  "ms-settings:usb",
+    "wifi":                 "ms-settings:network-wifi",
+    "wi-fi":                "ms-settings:network-wifi",
+    "ethernet":             "ms-settings:network-ethernet",
+    "vpn":                  "ms-settings:network-vpn",
+    "airplane mode":        "ms-settings:network-airplanemode",
+    "hotspot":              "ms-settings:network-mobilehotspot",
+    "proxy":                "ms-settings:network-proxy",
+    "background":           "ms-settings:personalization-background",
+    "colors":               "ms-settings:personalization-colors",
+    "lock screen":          "ms-settings:lockscreen",
+    "themes":               "ms-settings:themes",
+    "fonts":                "ms-settings:fonts",
+    "start":                "ms-settings:personalization-start",
+    "taskbar":              "ms-settings:taskbar",
+    "apps & features":      "ms-settings:appsfeatures",
+    "default apps":         "ms-settings:defaultapps",
+    "startup":              "ms-settings:startupapps",
+    "your info":            "ms-settings:yourinfo",
+    "accounts":             "ms-settings:yourinfo",
+    "sign-in":              "ms-settings:signinoptions",
+    "sign in":              "ms-settings:signinoptions",
+    "family":               "ms-settings:otherusers",
+    "windows backup":       "ms-settings:windowsbackup",
+    "date & time":          "ms-settings:dateandtime",
+    "date and time":        "ms-settings:dateandtime",
+    "region":               "ms-settings:regionlanguage",
+    "language":             "ms-settings:regionlanguage",
+    "speech":               "ms-settings:speech",
+    "game bar":             "ms-settings:gaming-gamebar",
+    "game mode":            "ms-settings:gaming-gamemode",
+    "magnifier":            "ms-settings:easeofaccess-magnifier",
+    "color filters":        "ms-settings:easeofaccess-colorfilter",
+    "high contrast":        "ms-settings:easeofaccess-highcontrast",
+    "narrator":             "ms-settings:easeofaccess-narrator",
+    "keyboard":             "ms-settings:easeofaccess-keyboard",
+    "windows update":       "ms-settings:windowsupdate",
+    "update":               "ms-settings:windowsupdate",
+    "security":             "ms-settings:windowsdefender",
+    "privacy":              "ms-settings:privacy",
+    "location":             "ms-settings:privacy-location",
+    "microphone":           "ms-settings:privacy-microphone",
+    "camera settings":      "ms-settings:privacy-webcam",
+    "notifications settings": "ms-settings:privacy-notifications",
+    "contacts":             "ms-settings:privacy-contacts",
+    "calendar settings":    "ms-settings:privacy-calendar",
+    "email settings":       "ms-settings:privacy-email",
+    "background apps":      "ms-settings:privacy-backgroundapps",
+    "activation":           "ms-settings:activation",
+    "recovery":             "ms-settings:recovery",
+    "troubleshoot":         "ms-settings:troubleshoot",
+    "developer":            "ms-settings:developers",
+    "for developers":       "ms-settings:developers",
+}
+
+SHORTCUTS = {
+    "select all":   ["ctrl", "a"],
+    "copy":         ["ctrl", "c"],
+    "paste":        ["ctrl", "v"],
+    "cut":          ["ctrl", "x"],
+    "undo":         ["ctrl", "z"],
+    "redo":         ["ctrl", "y"],
+    "save":         ["ctrl", "s"],
+    "print":        ["ctrl", "p"],
+    "new tab":      ["ctrl", "t"],
+    "close tab":    ["ctrl", "w"],
+    "refresh":      ["ctrl", "r"],
+    "switch window":["alt", "tab"],
+    "close window": ["alt", "f4"],
+    "find":         ["ctrl", "f"],
+    "zoom in":      ["ctrl", "+"],
+    "zoom out":     ["ctrl", "-"],
+    "screenshot":   ["win", "shift", "s"],
+    "desktop":      ["win", "d"],
+    "lock":         ["win", "l"],
+    "task view":    ["win", "tab"],
+}
+
+WEBSITES = {
+    "youtube":      "https://www.youtube.com",
+    "google":       "https://www.google.com",
+    "instagram":    "https://www.instagram.com",
+    "whatsapp":     "https://web.whatsapp.com",
+    "facebook":     "https://www.facebook.com",
+    "twitter":      "https://www.twitter.com",
+    "github":       "https://www.github.com",
+    "gmail":        "https://mail.google.com",
+    "maps":         "https://maps.google.com",
+    "wikipedia":    "https://www.wikipedia.org",
+    "amazon":       "https://www.amazon.in",
+    "flipkart":     "https://www.flipkart.com",
+    "netflix":      "https://www.netflix.com",
+    "linkedin":     "https://www.linkedin.com",
+    "stackoverflow":"https://stackoverflow.com",
+}
+
+MEMORY_FILE = "isha_memory.json"
+CUSTOM_ACTIONS_FILE = "isha_custom_actions.json"
+
+
+# ═══════════════════════════════════════════════════════════════
+# MEMORY SYSTEM
+# ═══════════════════════════════════════════════════════════════
+
+class Memory:
+    def __init__(self):
+        self.data = {}
+        self.load()
+
+    def load(self):
+        try:
+            if os.path.exists(MEMORY_FILE):
+                with open(MEMORY_FILE, "r") as f:
+                    self.data = json.load(f)
+        except:
+            self.data = {}
+
+    def save(self):
+        try:
+            with open(MEMORY_FILE, "w") as f:
+                json.dump(self.data, f, indent=2)
+        except:
+            pass
+
+    def remember(self, key, value):
+        self.data[key] = value
+        self.save()
+
+    def recall(self, key):
+        return self.data.get(key)
+
+    def forget(self, key):
+        if key in self.data:
+            del self.data[key]
+            self.save()
+
+memory = Memory()
+
+
+# ═══════════════════════════════════════════════════════════════
+# CUSTOM ACTIONS
+# ═══════════════════════════════════════════════════════════════
+
+custom_actions = {}
+
+def load_custom_actions():
+    global custom_actions
+    try:
+        if os.path.exists(CUSTOM_ACTIONS_FILE):
+            with open(CUSTOM_ACTIONS_FILE, "r") as f:
+                custom_actions = json.load(f)
+    except:
+        custom_actions = {}
+
+def save_custom_actions():
+    try:
+        with open(CUSTOM_ACTIONS_FILE, "w") as f:
+            json.dump(custom_actions, f, indent=2)
+    except:
+        pass
+
+load_custom_actions()
+
+
+# ═══════════════════════════════════════════════════════════════
+# TTS ENGINE
+# ═══════════════════════════════════════════════════════════════
+
+tts_engine = None
+
+def init_tts():
+    global tts_engine
+    if TTS_AVAILABLE:
+        try:
+            tts_engine = pyttsx3.init()
+            voices = tts_engine.getProperty('voices')
+            # Try to find female voice
+            for v in voices:
+                if "female" in v.name.lower() or "zira" in v.name.lower() or "hazel" in v.name.lower():
+                    tts_engine.setProperty('voice', v.id)
+                    break
+            tts_engine.setProperty('rate', 185)
+            tts_engine.setProperty('volume', 1.0)
+        except Exception as e:
+            log.warning(f"TTS init failed: {e}")
+            tts_engine = None
+
+init_tts()
+
+_tts_lock = threading.Lock()
+
+def speak(text: str):
+    """Speak text aloud and display in GUI."""
+    print(f"[ISHA] {text}")
+    if app_instance:
+        app_instance.show_response(text)
+    if tts_engine:
+        def _speak():
+            with _tts_lock:
+                try:
+                    tts_engine.say(text)
+                    tts_engine.runAndWait()
+                except:
+                    pass
+        threading.Thread(target=_speak, daemon=True).start()
+
+app_instance = None  # Will be set when GUI launches
+
+
+# ═══════════════════════════════════════════════════════════════
+# VOICE INPUT
+# ═══════════════════════════════════════════════════════════════
+
+recognizer = sr.Recognizer() if STT_AVAILABLE else None
+mic_active = False
+
+def listen_once():
+    """Listen for one phrase and return text."""
+    if not STT_AVAILABLE:
+        return ""
+    try:
+        with sr.Microphone() as source:
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            audio = recognizer.listen(source, timeout=5, phrase_time_limit=8)
+            text = recognizer.recognize_google(audio)
+            log.info(f"Heard: {text}")
+            return text.lower()
+    except sr.WaitTimeoutError:
+        return ""
+    except sr.UnknownValueError:
+        return ""
+    except Exception as e:
+        log.warning(f"STT error: {e}")
+        return ""
+
+
+# ═══════════════════════════════════════════════════════════════
+# GREETING
+# ═══════════════════════════════════════════════════════════════
+
+def get_time_greeting():
+    hour = datetime.now().hour
+    if 5 <= hour < 12:   return "Good morning"
+    elif 12 <= hour < 17: return "Good afternoon"
+    elif 17 <= hour < 21: return "Good evening"
+    else:                 return "Good night"
+
+
+# ═══════════════════════════════════════════════════════════════
+# CORE BRAIN — process command (updated with API calls)
+# ═══════════════════════════════════════════════════════════════
+
+def process_command(raw: str) -> str:
+    """Main brain: receive command, return response string."""
+    cmd = raw.strip().lower()
+    if not cmd:
+        return ""
+
+    # --- API Commands (New) ---
+    
+    # Weather
+    if any(w in cmd for w in ["weather", "mausam", "temperature", "temp", "kitni garmi", "kya mausam"]):
+        city = extract_city_name(cmd)
+        if city:
+            return APIHandler.get_weather(city)
+        else:
+            return "Kaunsa city ka weather chahiye? City name batao."
+    
+    # News
+    if any(w in cmd for w in ["news", "khabar", "headlines", "samachar"]):
+        if "tech" in cmd or "technology" in cmd:
+            return APIHandler.get_news("technology")
+        elif "sports" in cmd or "khel" in cmd:
+            return APIHandler.get_news("sports")
+        elif "business" in cmd or "vyapar" in cmd:
+            return APIHandler.get_news("business")
+        elif "entertainment" in cmd or "movie" in cmd:
+            return APIHandler.get_news("entertainment")
+        else:
+            return APIHandler.get_news("general")
+    
+    # Joke
+    if any(w in cmd for w in ["joke", "jokes", "mazak", "haso", "hansao", "funny"]):
+        if "chuck" in cmd or "norris" in cmd:
+            return APIHandler.get_chuck_norris_joke()
+        else:
+            return APIHandler.get_joke()
+    
+    # Quote
+    if any(w in cmd for w in ["quote", "inspiration", "motivation", "inspirational", "suvichar"]):
+        return APIHandler.get_quote()
+    
+    # Cat fact
+    if any(w in cmd for w in ["cat fact", "cat facts", "billi fact", "cat"]):
+        return APIHandler.get_cat_fact()
+    
+    # Advice
+    if any(w in cmd for w in ["advice", "salah", "suggestion", "tips"]):
+        return APIHandler.get_advice()
+    
+    # Astronauts in space
+    if any(w in cmd for w in ["astronaut", "space", "iss", "cosmos", "antriksh"]):
+        return APIHandler.get_astronauts()
+    
+    # Random user
+    if any(w in cmd for w in ["random user", "random person", "fake user"]):
+        return APIHandler.get_random_user()
+    
+    # Dictionary
+    if any(w in cmd for w in ["meaning", "definition", "define", "matlab", "what is the meaning"]):
+        word = extract_word_for_definition(cmd)
+        if word:
+            return APIHandler.get_definition(word)
+        else:
+            return "Kaunsa word ka meaning chahiye?"
+    
+    # Fun fact
+    if any(w in cmd for w in ["fact", "fun fact", "did you know", "interesting fact"]):
+        facts = [
+            "🐱 Cats have five toes on their front paws, but only four on their back paws!",
+            "🌊 Oceans contain 97% of Earth's water!",
+            "🍕 The world's largest pizza was 13,580 square feet!",
+            "🐘 Elephants can't jump!",
+            "🍌 Bananas are berries, but strawberries aren't!",
+            "🐬 Dolphins have names for each other!",
+            "🌞 One million Earths can fit inside the Sun!",
+            "🦒 Giraffes have blue tongues!",
+            "🐧 Penguins propose with pebbles!",
+            "🦷 Snails have thousands of teeth!"
+        ]
+        return random.choice(facts)
+    
+    # --- Memory commands ---
+    if cmd.startswith("remember "):
+        parts = cmd[9:].split(" is ", 1)
+        if len(parts) == 2:
+            memory.remember(parts[0].strip(), parts[1].strip())
+            return f"Yaad rakh liya: {parts[0].strip()} = {parts[1].strip()}"
+        return "Format: remember [key] is [value]"
+
+    if cmd.startswith("recall ") or cmd.startswith("what is ") or cmd.startswith("kya hai "):
+        key = cmd.split(" ", 2)[-1]
+        val = memory.recall(key)
+        return f"{key} = {val}" if val else f"Mujhe '{key}' yaad nahi."
+
+    # --- Date / Time ---
+    if any(w in cmd for w in ["time kya", "what time", "time batao", "kitna baja"]):
+        return f"Abhi {datetime.now().strftime('%I:%M %p')} baj rahe hain."
+
+    if any(w in cmd for w in ["date kya", "aaj ki date", "today date", "what date"]):
+        return f"Aaj {datetime.now().strftime('%d %B %Y')} hai."
+
+    if any(w in cmd for w in ["din kya", "what day", "aaj kaun sa din", "today day"]):
+        return f"Aaj {datetime.now().strftime('%A')} hai."
+
+    # --- Greeting replies ---
+    for key, responses in REPLIES.items():
+        if key in cmd:
+            return random.choice(responses)
+
+    # --- Math ---
+    if any(op in cmd for op in ["+", "-", "*", "/", "√", "^", "π", "sqrt", "solve", "calculate", "calculate karo"]):
+        return solve_math(cmd)
+
+    # --- Screenshot ---
+    if "screenshot" in cmd and "shortcut" not in cmd:
+        take_screenshot()
+        return "Screenshot le liya! 📸"
+
+    # --- Screen record ---
+    if "record" in cmd and "screen" in cmd:
+        threading.Thread(target=screen_record, args=(15,), daemon=True).start()
+        return "Screen recording shuru ho gayi! (15 seconds)"
+
+    # --- Selfie / photo ---
+    if any(w in cmd for w in ["selfie", "photo le", "camera photo"]):
+        take_selfie()
+        return "Photo kheench li! 📷"
+
+    # --- IP Address ---
+    if any(w in cmd for w in ["ip batao", "ip address", "my ip", "mera ip"]):
+        return check_ip()
+
+    # --- Internet speed ---
+    if any(w in cmd for w in ["internet speed", "speed check", "download speed", "network speed"]):
+        return check_speed_text()
+
+    # --- Alarm ---
+    if "alarm" in cmd:
+        return parse_alarm(cmd)
+
+    # --- Reminder ---
+    if any(w in cmd for w in ["remind", "yaad dilao", "reminder"]):
+        return parse_reminder(cmd)
+
+    # --- Volume controls ---
+    if "volume up" in cmd or "volume badha" in cmd:
+        if PYAUTOGUI_AVAILABLE:
+            pyautogui.press("volumeup")
+            return "Volume badha diya 🔊"
+
+    if "volume down" in cmd or "volume kam" in cmd:
+        if PYAUTOGUI_AVAILABLE:
+            pyautogui.press("volumedown")
+            return "Volume kam kar diya 🔉"
+
+    if "mute" in cmd or "chup" in cmd:
+        if PYAUTOGUI_AVAILABLE:
+            pyautogui.press("volumemute")
+            return "Mute kar diya 🔇"
+
+    # --- YouTube music ---
+    if any(w in cmd for w in ["play", "gaana", "song", "music chalao", "suno"]):
+        return play_youtube(cmd)
+
+    if "next song" in cmd or "agli song" in cmd:
+        if PYAUTOGUI_AVAILABLE: pyautogui.hotkey("shift", "n")
+        return "Next song ▶"
+
+    if "previous song" in cmd or "pichli song" in cmd:
+        if PYAUTOGUI_AVAILABLE: pyautogui.hotkey("shift", "p")
+        return "Previous song ◀"
+
+    if any(w in cmd for w in ["pause", "stop song", "band karo song"]):
+        if PYAUTOGUI_AVAILABLE: pyautogui.press("k")
+        return "Song pause/stop kar diya ⏸"
+
+    # --- Keyboard shortcuts ---
+    action = detect_action(cmd)
+    if action:
+        perform_action(action)
+        return f"'{action}' shortcut execute kar diya ⌨️"
+
+    # --- Custom actions ---
+    for key in custom_actions:
+        if key in cmd:
+            if PYAUTOGUI_AVAILABLE:
+                pyautogui.hotkey(*custom_actions[key])
+            return f"Custom action '{key}' done!"
+
+    # --- Open website ---
+    web_result = open_website(cmd)
+    if web_result:
+        return web_result
+
+    # --- Open app ---
+    if any(w in cmd for w in ["open", "kholo", "chalu karo", "start"]):
+        result = smart_open(cmd)
+        if result:
+            return result
+
+    # --- Open setting ---
+    if any(w in cmd for w in ["setting", "settings"]):
+        result = smart_open(cmd)
+        if result:
+            return result
+
+    # --- Google search fallback ---
+    if any(w in cmd for w in ["search", "dhundo", "kya hai", "kaun hai", "what is", "who is", "batao"]):
+        return google_search(cmd)
+
+    # --- Fuzzy match apps/settings as last resort ---
+    fuzzy = smart_open(cmd)
+    if fuzzy:
+        return fuzzy
+
+    # --- Unknown ---
+    defaults = [
+        "Samajh nahi aaya. Thoda aur clearly batao?",
+        "Hmm, ye mujhe pata nahi. Google search karein?",
+        "Iska jawab mujhe nahi pata abhi.",
+        "Aap 'help' bol kar dekh sakte ho jo main kar sakti hu.",
+    ]
+    return random.choice(defaults)
+
+
+# ═══════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS FOR API
+# ═══════════════════════════════════════════════════════════════
+
+def extract_city_name(cmd: str) -> str:
+    """Extract city name from weather command"""
+    words = cmd.split()
+    city_keywords = ["in", "of", "ka", "mein", "weather", "mausam", "temperature", "temp", "for"]
+    
+    for i, word in enumerate(words):
+        if word in ["in", "of", "ka", "mein", "for", "at"] and i + 1 < len(words):
+            return words[i + 1]
+    
+    # Remove common keywords
+    for kw in city_keywords:
+        cmd = cmd.replace(kw, "")
+    
+    cleaned = " ".join([w for w in cmd.split() if w not in city_keywords])
+    if cleaned.strip():
+        return cleaned.strip()
+    
+    return None
+
+def extract_word_for_definition(cmd: str) -> str:
+    """Extract word for definition"""
+    words = cmd.split()
+    # Look for patterns like "meaning of X" or "define X"
+    for i, word in enumerate(words):
+        if word in ["meaning", "definition", "define", "matlab", "of"]:
+            if i + 1 < len(words):
+                return words[i + 1]
+    
+    # If no pattern found, take the last word (might be the word)
+    if words:
+        return words[-1]
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# BRAIN HELPERS (existing functions)
+# ═══════════════════════════════════════════════════════════════
+
+def smart_open(command: str) -> str:
+    """Open app or setting using fuzzy matching."""
+    all_keys = list(APPS.keys()) + list(SETTINGS.keys())
+    words = command.split()
+
+    # Direct match
+    for app in APPS:
+        if app in command:
+            os.system(APPS[app])
+            return f"'{app}' open kar raha hu 🚀"
+
+    for setting in SETTINGS:
+        if setting in command:
+            os.system(f"start {SETTINGS[setting]}")
+            return f"'{setting}' settings open kar raha hu ⚙️"
+
+    # Fuzzy
+    match = get_close_matches(command, all_keys, n=1, cutoff=0.45)
+    if match:
+        key = match[0]
+        if key in APPS:
+            os.system(APPS[key])
+            return f"'{key}' open kar raha hu 🚀"
+        elif key in SETTINGS:
+            os.system(f"start {SETTINGS[key]}")
+            return f"'{key}' settings open kar raha hu ⚙️"
+
+    return ""
+
+def detect_action(cmd: str) -> str | None:
+    if "select all" in cmd or "sab select" in cmd:   return "select all"
+    if "copy" in cmd:     return "copy"
+    if "paste" in cmd:    return "paste"
+    if "cut" in cmd:      return "cut"
+    if "undo" in cmd:     return "undo"
+    if "redo" in cmd:     return "redo"
+    if "save" in cmd and "screenshot" not in cmd: return "save"
+    if "print" in cmd:    return "print"
+    if "new tab" in cmd:  return "new tab"
+    if "close tab" in cmd: return "close tab"
+    if "refresh" in cmd:  return "refresh"
+    if "switch window" in cmd or "alt tab" in cmd: return "switch window"
+    if "close window" in cmd or "band karo" in cmd: return "close window"
+    if "find" in cmd:     return "find"
+    if "zoom in" in cmd:  return "zoom in"
+    if "zoom out" in cmd: return "zoom out"
+    if "lock" in cmd and "screen" in cmd: return "lock"
+    return None
+
+def perform_action(action: str):
+    if PYAUTOGUI_AVAILABLE and action in SHORTCUTS:
+        pyautogui.hotkey(*SHORTCUTS[action])
+
+def open_website(query: str) -> str:
+    for name, url in WEBSITES.items():
+        if name in query:
+            webbrowser.open(url)
+            return f"{name.capitalize()} open kar raha hu 🌐"
+    # Open URL if present
+    if "http" in query:
+        parts = query.split()
+        for p in parts:
+            if p.startswith("http"):
+                webbrowser.open(p)
+                return f"URL open kar raha hu 🌐"
+    return ""
+
+def play_youtube(query: str) -> str:
+    clean = query
+    for w in ["play", "gaana", "song", "chalao", "music", "suno", "youtube par"]:
+        clean = clean.replace(w, "").strip()
+    if not clean:
+        return "Kya play karna hai? Naam batao."
+    if YT_AVAILABLE:
+        try:
+            threading.Thread(target=kit.playonyt, args=(clean,), daemon=True).start()
+            return f"'{clean}' YouTube par play kar raha hu 🎵"
+        except:
+            pass
+    url = f"https://www.youtube.com/results?search_query={clean.replace(' ', '+')}"
+    webbrowser.open(url)
+    return f"'{clean}' YouTube par search kar raha hu 🎵"
+
+def google_search(query: str) -> str:
+    clean = query
+    for w in ["search", "dhundo", "kya hai", "kaun hai", "what is", "who is", "batao", "google par", "search karo"]:
+        clean = clean.replace(w, "").strip()
+    if not clean:
+        return "Kya search karna hai?"
+    if WEB_AVAILABLE:
+        try:
+            url = f"https://www.google.com/search?q={clean}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            res = requests.get(url, headers=headers, timeout=5)
+            soup = BeautifulSoup(res.text, "html.parser")
+            answer = soup.find("div", class_="BNeawe")
+            if answer:
+                return answer.text[:300]
+        except:
+            pass
+    # Fallback: open browser
+    webbrowser.open(f"https://www.google.com/search?q={clean}")
+    return f"'{clean}' Google par search kar raha hu 🔍"
+
+def solve_math(expr: str) -> str:
+    if not MATH_AVAILABLE:
+        try:
+            clean = expr.replace("×","*").replace("÷","/").replace("^","**")
+            result = eval(clean)
+            return f"Answer: {result} 🧮"
+        except:
+            return "Math solve nahi ho paya."
+    try:
+        clean = expr.replace("×","*").replace("÷","/").replace("√","sqrt(").replace("π","pi")
+        if "√" in expr:
+            clean += ")"
+        result = sympify(clean)
+        return f"Answer: {result} 🧮"
+    except:
+        return "Ye expression solve nahi ho paya."
+
+def check_ip() -> str:
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        return f"Aapka IP address hai: {ip} 🌐"
+    except:
+        return "IP address fetch nahi ho paya."
+
+def check_speed_text() -> str:
+    if not SPEED_AVAILABLE:
+        return "speedtest-cli install karo: pip install speedtest-cli"
+    def _check():
+        try:
+            st = speedtest.Speedtest()
+            d = round(st.download() / 1_000_000, 2)
+            u = round(st.upload() / 1_000_000, 2)
+            speak(f"Download: {d} Mbps, Upload: {u} Mbps")
+        except:
+            speak("Speed test fail ho gaya.")
+    threading.Thread(target=_check, daemon=True).start()
+    return "Internet speed check kar raha hu... ⏳"
+
+def take_screenshot():
+    if not PYAUTOGUI_AVAILABLE:
+        return
+    folder = "isha_screenshots"
+    os.makedirs(folder, exist_ok=True)
+    filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".png"
+    path = os.path.join(folder, filename)
+    pyautogui.screenshot(path)
+    log.info(f"Screenshot saved: {path}")
+
+def screen_record(duration=15):
+    if not GESTURE_AVAILABLE or not PYAUTOGUI_AVAILABLE:
+        speak("Screen recording ke liye cv2 install karo.")
+        return
+    speak("Screen recording shuru ho rahi hai")
+    screen_size = pyautogui.size()
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".avi"
+    out = cv2.VideoWriter(filename, fourcc, 20.0, screen_size)
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        img = pyautogui.screenshot()
+        frame = np.array(img)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        out.write(frame)
+    out.release()
+    speak("Recording save ho gayi!")
+
+def take_selfie():
+    if not GESTURE_AVAILABLE:
+        speak("opencv install karo selfie ke liye")
+        return
+    cam = cv2.VideoCapture(0)
+    ret, frame = cam.read()
+    if ret:
+        filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_selfie.jpg"
+        cv2.imwrite(filename, frame)
+        speak("Selfie save ho gayi!")
+    else:
+        speak("Camera error")
+    cam.release()
+
+def parse_alarm(cmd: str):
+    import re
+    match = re.search(r'(\d{1,2}:\d{2})', cmd)
+    if match:
+        alarm_time = match.group(1)
+        def _alarm():
+            speak(f"Alarm set {alarm_time} ke liye")
+            while True:
+                now = datetime.now().strftime("%H:%M")
+                if now == alarm_time:
+                    speak("Alarm baj raha hai! Wake up! ⏰")
+                    break
+                time.sleep(30)
+        threading.Thread(target=_alarm, daemon=True).start()
+        return f"Alarm set ho gaya {alarm_time} ke liye ⏰"
+    return "Alarm time batao, jaise: alarm 07:30"
+
+def parse_reminder(cmd: str):
+    import re
+    match = re.search(r'(\d+)\s*second', cmd)
+    if match:
+        secs = int(match.group(1))
+        msg_match = re.search(r'(?:baad|after)[^a-z]*(.+)', cmd)
+        msg = msg_match.group(1) if msg_match else "Reminder!"
+        def _remind():
+            time.sleep(secs)
+            speak(f"Reminder: {msg}")
+        threading.Thread(target=_remind, daemon=True).start()
+        return f"Reminder set ho gaya {secs} seconds baad 🔔"
+    return "Format: 30 second baad yaad dilao [message]"
+
+
+# ═══════════════════════════════════════════════════════════════
+# GESTURE THREAD (unchanged)
+# ═══════════════════════════════════════════════════════════════
+
+gesture_thread_running = False
+
+def start_gesture_mode():
+    """Run gesture recognition in background thread."""
+    if not GESTURE_AVAILABLE:
+        speak("MediaPipe ya OpenCV install nahi hai. Gesture mode unavailable.")
+        return
+
+    global gesture_thread_running
+    if gesture_thread_running:
+        speak("Gesture mode pehle se chal raha hai.")
+        return
+
+    gesture_thread_running = True
+    speak("Gesture mode on! Open palm dikhao activate karne ke liye.")
+
+    def _run():
+        global gesture_thread_running
+        mp_hands = mp.solutions.hands
+        hands_detector = mp_hands.Hands(min_detection_confidence=0.7)
+        cap = cv2.VideoCapture(0)
+
+        gesture_active = False
+        last_action_t = 0
+        prev_x = 0
+
+        def _dist(p1, p2):
+            return math.hypot(p1.x - p2.x, p1.y - p2.y)
+
+        def _is_fist(hand):
+            return all(hand.landmark[t].y > hand.landmark[t-2].y for t in [8,12,16,20])
+
+        def _is_palm(hand):
+            return all(hand.landmark[t].y < hand.landmark[t-2].y for t in [8,12,16,20])
+
+        def _is_pinch(hand):
+            return _dist(hand.landmark[4], hand.landmark[8]) < 0.05
+
+        def _fingers_up(hand):
+            return [hand.landmark[t].y < hand.landmark[t-2].y for t in [8,12,16,20]]
+
+        while gesture_thread_running:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            frame = cv2.flip(frame, 1)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = hands_detector.process(rgb)
+
+            if result.multi_hand_landmarks:
+                for hand in result.multi_hand_landmarks:
+                    x = hand.landmark[8].x
+
+                    if _is_palm(hand):
+                        if time.time() - last_action_t > 2:
+                            gesture_active = not gesture_active
+                            speak("Gesture " + ("activated" if gesture_active else "deactivated"))
+                            last_action_t = time.time()
+
+                    if not gesture_active:
+                        continue
+
+                    sw, sh = pyautogui.size()
+                    sx = int(hand.landmark[8].x * sw)
+                    sy = int(hand.landmark[8].y * sh)
+                    pyautogui.moveTo(sx, sy)
+
+                    if _is_pinch(hand):
+                        pyautogui.mouseDown()
+                    else:
+                        pyautogui.mouseUp()
+
+                    if _is_fist(hand) and time.time() - last_action_t > 2:
+                        take_screenshot()
+                        speak("Screenshot liya!")
+                        last_action_t = time.time()
+
+                    f = _fingers_up(hand)
+
+                    if f == [True, True, False, False] and time.time() - last_action_t > 2:
+                        cv2.imwrite(datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + "_gesture.jpg", frame)
+                        speak("Photo!")
+                        last_action_t = time.time()
+
+                    # Swipe
+                    if prev_x != 0:
+                        dx = x - prev_x
+                        if dx > 0.15:
+                            pyautogui.hotkey("alt", "tab")
+                        elif dx < -0.15:
+                            pyautogui.hotkey("alt", "shift", "tab")
+                    prev_x = x
+
+                    # Volume
+                    if not any(f) and hand.landmark[4].y < hand.landmark[3].y:
+                        pyautogui.press("volumeup")
+                    elif not any(f) and hand.landmark[4].y > hand.landmark[3].y:
+                        pyautogui.press("volumedown")
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+        gesture_thread_running = False
+
+    threading.Thread(target=_run, daemon=True).start()
+
+def stop_gesture_mode():
+    global gesture_thread_running
+    gesture_thread_running = False
+    speak("Gesture mode off.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# GUI — Beautiful ISHA Interface (with API settings)
+# ═══════════════════════════════════════════════════════════════
+
+class IshaGUI:
+    """Capsule-shaped ISHA GUI with mic, search bar, settings."""
+
+    # ── Colors ──────────────────────────────────────────────────
+    BG          = "#0A0A0F"
+    CAPSULE_BG  = "#12121A"
+    CAPSULE_BD  = "#2A2A40"
+    ACCENT      = "#7C6FED"       # soft violet
+    ACCENT2     = "#ED6FB0"       # pink
+    GOLD        = "#F5C842"
+    BTN_BG      = "#1A1A28"
+    BTN_HOVER   = "#252538"
+    TEXT_MAIN   = "#E8E8F0"
+    TEXT_DIM    = "#6A6A80"
+    MIC_ON      = "#ED4F4F"
+    MIC_OFF     = "#7C6FED"
+    POPUP_BG    = "#0E0E18"
+    POPUP_BD    = "#2A2A40"
+
+    def __init__(self, root: tk.Tk):
+        global app_instance
+        app_instance = self
+
+        self.root = root
+        self.root.title("ISHA — Intelligent System for Human Assistance")
+        self.root.configure(bg=self.BG)
+        self.root.resizable(False, False)
+        self.root.attributes("-topmost", True)
+
+        # State
+        self.mic_on       = False
+        self.mic_thread   = None
+        self.settings_popup = None
+        self.apps_popup     = None
+        self.api_popup      = None
+        self.response_after = None
+
+        # Position bottom-center
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        w, h = 560, 66
+        self.root.geometry(f"{w}x{h}+{(sw-w)//2}+{sh-h-60}")
+
+        self._build_ui()
+        self._greet()
+
+    # ── Build UI ────────────────────────────────────────────────
+
+    def _build_ui(self):
+        self.canvas = tk.Canvas(
+            self.root, width=560, height=66,
+            bg=self.BG, highlightthickness=0
+        )
+        self.canvas.pack()
+        self._draw_capsule()
+        self._draw_mic_btn()
+        self._draw_search()
+        self._draw_settings_btn()
+        self._draw_apps_btn()
+        self._draw_api_btn()
+
+    def _draw_capsule(self):
+        """Draw the main capsule shape."""
+        pad, h = 8, 50
+        r = h // 2
+        x1, y1 = pad, 8
+        x2, y2 = 552, 58
+
+        # Shadow
+        self.canvas.create_arc(x1+2, y1+2, x1+h+2, y2+2,
+                                start=90, extent=180,
+                                fill="#050508", outline="")
+        self.canvas.create_arc(x2-h-2, y1+2, x2+2, y2+2,
+                                start=270, extent=180,
+                                fill="#050508", outline="")
+        self.canvas.create_rectangle(x1+r+2, y1+2, x2-r+2, y2+2,
+                                     fill="#050508", outline="")
+
+        # Body
+        self.canvas.create_arc(x1, y1, x1+h, y2, start=90, extent=180,
+                                fill=self.CAPSULE_BG, outline=self.CAPSULE_BD)
+        self.canvas.create_arc(x2-h, y1, x2, y2, start=270, extent=180,
+                                fill=self.CAPSULE_BG, outline=self.CAPSULE_BD)
+        self.canvas.create_rectangle(x1+r, y1, x2-r, y2,
+                                     fill=self.CAPSULE_BG, outline="")
+        # Top/bottom border lines
+        self.canvas.create_line(x1+r, y1, x2-r, y1, fill=self.CAPSULE_BD, width=1)
+        self.canvas.create_line(x1+r, y2, x2-r, y2, fill=self.CAPSULE_BD, width=1)
+
+    def _draw_mic_btn(self):
+        """Circular mic button on the left."""
+        cx, cy, r = 41, 33, 20
+        self.mic_oval = self.canvas.create_oval(
+            cx-r, cy-r, cx+r, cy+r,
+            fill=self.MIC_OFF, outline="", tags="mic_btn"
+        )
+        # Mic icon
+        self.mic_icon = self.canvas.create_text(
+            cx, cy, text="🎤", font=("Segoe UI Emoji", 12), tags="mic_btn"
+        )
+        self.canvas.tag_bind("mic_btn", "<Button-1>", self._toggle_mic)
+        self.canvas.tag_bind("mic_btn", "<Enter>",
+            lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("mic_btn", "<Leave>",
+            lambda e: self.canvas.config(cursor=""))
+
+    def _draw_search(self):
+        """Search bar in the middle."""
+        # Input field frame via canvas window
+        self.search_var = tk.StringVar()
+        self.search_entry = tk.Entry(
+            self.root,
+            textvariable=self.search_var,
+            font=("Segoe UI", 11),
+            bg="#1A1A28", fg=self.TEXT_MAIN,
+            insertbackground=self.ACCENT,
+            relief="flat", bd=0,
+            highlightthickness=0
+        )
+        self.canvas.create_window(
+            285, 33, window=self.search_entry, width=340, height=30
+        )
+        # Placeholder
+        self._set_placeholder()
+        self.search_entry.bind("<FocusIn>",  self._clear_placeholder)
+        self.search_entry.bind("<FocusOut>", self._restore_placeholder)
+        self.search_entry.bind("<Return>",   self._on_search_enter)
+
+    def _set_placeholder(self):
+        self.search_entry.insert(0, "Ask Isha anything...")
+        self.search_entry.config(fg=self.TEXT_DIM)
+        self._is_placeholder = True
+
+    def _clear_placeholder(self, e=None):
+        if getattr(self, "_is_placeholder", False):
+            self.search_entry.delete(0, tk.END)
+            self.search_entry.config(fg=self.TEXT_MAIN)
+            self._is_placeholder = False
+
+    def _restore_placeholder(self, e=None):
+        if not self.search_var.get():
+            self._set_placeholder()
+
+    def _on_search_enter(self, e=None):
+        text = self.search_var.get().strip()
+        if text and text != "Ask Isha anything...":
+            self.search_entry.delete(0, tk.END)
+            self._set_placeholder()
+            threading.Thread(target=self._handle_command, args=(text,), daemon=True).start()
+
+    def _draw_settings_btn(self):
+        """Circular settings button on the right."""
+        cx, cy, r = 519, 33, 20
+        self.settings_oval = self.canvas.create_oval(
+            cx-r, cy-r, cx+r, cy+r,
+            fill=self.BTN_BG, outline=self.CAPSULE_BD, tags="settings_btn"
+        )
+        self.canvas.create_text(
+            cx, cy, text="⚙", font=("Segoe UI Emoji", 14),
+            fill=self.TEXT_DIM, tags="settings_btn"
+        )
+        self.canvas.tag_bind("settings_btn", "<Button-1>", self._toggle_settings_popup)
+        self.canvas.tag_bind("settings_btn", "<Enter>",
+            lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("settings_btn", "<Leave>",
+            lambda e: self.canvas.config(cursor=""))
+
+    def _draw_apps_btn(self):
+        """Small '!' icon for apps/settings list popup."""
+        cx, cy = 80, 33
+        self.apps_btn = self.canvas.create_text(
+            cx, cy, text="⊞", font=("Segoe UI", 14),
+            fill=self.GOLD, tags="apps_btn"
+        )
+        self.canvas.tag_bind("apps_btn", "<Button-1>", self._toggle_apps_popup)
+        self.canvas.tag_bind("apps_btn", "<Enter>",
+            lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("apps_btn", "<Leave>",
+            lambda e: self.canvas.config(cursor=""))
+
+    def _draw_api_btn(self):
+        """API button for API settings"""
+        cx, cy = 120, 33
+        self.api_btn = self.canvas.create_text(
+            cx, cy, text="🌐", font=("Segoe UI Emoji", 12),
+            fill=self.ACCENT2, tags="api_btn"
+        )
+        self.canvas.tag_bind("api_btn", "<Button-1>", self._toggle_api_popup)
+        self.canvas.tag_bind("api_btn", "<Enter>",
+            lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("api_btn", "<Leave>",
+            lambda e: self.canvas.config(cursor=""))
+
+    # ── Response display ─────────────────────────────────────────
+
+    def show_response(self, text: str):
+        """Show floating response tooltip near the capsule."""
+        def _show():
+            # Remove existing tooltip
+            if hasattr(self, "_tooltip") and self._tooltip:
+                try: self._tooltip.destroy()
+                except: pass
+            if self.response_after:
+                self.root.after_cancel(self.response_after)
+
+            tip = tk.Toplevel(self.root)
+            tip.overrideredirect(True)
+            tip.attributes("-topmost", True)
+            tip.configure(bg=self.POPUP_BG)
+
+            # Position above capsule
+            rx = self.root.winfo_x()
+            ry = self.root.winfo_y()
+
+            lbl = tk.Label(
+                tip, text=text,
+                font=("Segoe UI", 10),
+                fg=self.TEXT_MAIN, bg=self.POPUP_BG,
+                wraplength=480, justify="left",
+                padx=16, pady=10
+            )
+            lbl.pack()
+            tip.update_idletasks()
+            tw = tip.winfo_width()
+            th = tip.winfo_height()
+            tip.geometry(f"+{rx + (560-tw)//2}+{ry - th - 8}")
+
+            # Rounded via highlight
+            tip.configure(highlightbackground=self.CAPSULE_BD,
+                          highlightthickness=1)
+            self._tooltip = tip
+            self.response_after = self.root.after(6000, self._hide_tooltip)
+
+        self.root.after(0, _show)
+
+    def _hide_tooltip(self):
+        if hasattr(self, "_tooltip") and self._tooltip:
+            try: self._tooltip.destroy()
+            except: pass
+            self._tooltip = None
+
+    # ── Mic ─────────────────────────────────────────────────────
+
+    def _toggle_mic(self, e=None):
+        if not self.mic_on:
+            self._start_mic()
+        else:
+            self._stop_mic()
+
+    def _start_mic(self):
+        self.mic_on = True
+        self.canvas.itemconfig(self.mic_oval, fill=self.MIC_ON)
+        self.canvas.itemconfig(self.mic_icon, text="🔴")
+        self.show_response("Listening... 🎤")
+        self.mic_thread = threading.Thread(target=self._listen_loop, daemon=True)
+        self.mic_thread.start()
+
+    def _stop_mic(self):
+        self.mic_on = False
+        self.canvas.itemconfig(self.mic_oval, fill=self.MIC_OFF)
+        self.canvas.itemconfig(self.mic_icon, text="🎤")
+
+    def _listen_loop(self):
+        while self.mic_on:
+            text = listen_once()
+            if text:
+                self.show_response(f"You: {text}")
+                self._handle_command(text)
+            else:
+                if self.mic_on:
+                    continue
+
+    def _handle_command(self, cmd: str):
+        response = process_command(cmd)
+        if response:
+            speak(response)
+
+    # ── API Settings Popup ───────────────────────────────────────
+
+    def _toggle_api_popup(self, e=None):
+        if self.api_popup and self.api_popup.winfo_exists():
+            self.api_popup.destroy()
+            self.api_popup = None
+            return
+        self._open_api_popup()
+
+    def _open_api_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        popup.configure(bg=self.POPUP_BG)
+        self.api_popup = popup
+
+        rx = self.root.winfo_x()
+        ry = self.root.winfo_y()
+
+        # Title
+        title = tk.Label(popup, text="🌐 API Settings",
+                         font=("Segoe UI", 10, "bold"),
+                         fg=self.ACCENT, bg=self.POPUP_BG, pady=8)
+        title.pack()
+
+        sep = tk.Frame(popup, bg=self.CAPSULE_BD, height=1)
+        sep.pack(fill="x", padx=12)
+
+        frame = tk.Frame(popup, bg=self.POPUP_BG, padx=12, pady=8)
+        frame.pack()
+
+        # Weather API key
+        tk.Label(frame, text="OpenWeatherMap API Key:", 
+                font=("Segoe UI", 9), fg=self.TEXT_DIM, bg=self.POPUP_BG).grid(row=0, column=0, sticky="w", pady=2)
+        weather_key = tk.Entry(frame, font=("Segoe UI", 9), bg=self.BTN_BG, fg=self.TEXT_MAIN, width=25)
+        weather_key.insert(0, API_CONFIG["weather"].get("key", ""))
+        weather_key.grid(row=0, column=1, pady=2, padx=5)
+
+        # News API key
+        tk.Label(frame, text="NewsAPI Key:", 
+                font=("Segoe UI", 9), fg=self.TEXT_DIM, bg=self.POPUP_BG).grid(row=1, column=0, sticky="w", pady=2)
+        news_key = tk.Entry(frame, font=("Segoe UI", 9), bg=self.BTN_BG, fg=self.TEXT_MAIN, width=25)
+        news_key.insert(0, API_CONFIG["news"].get("key", ""))
+        news_key.grid(row=1, column=1, pady=2, padx=5)
+
+        def save_keys():
+            if weather_key.get().strip():
+                API_CONFIG["weather"]["key"] = weather_key.get().strip()
+                API_CONFIG["weather"]["enabled"] = True
+            if news_key.get().strip():
+                API_CONFIG["news"]["key"] = news_key.get().strip()
+                API_CONFIG["news"]["enabled"] = True
+            save_api_keys()
+            speak("API keys saved successfully!")
+            popup.destroy()
+
+        btn_frame = tk.Frame(popup, bg=self.POPUP_BG, pady=10)
+        btn_frame.pack()
+
+        tk.Button(btn_frame, text="💾 Save Keys", command=save_keys,
+                 font=("Segoe UI", 9), bg=self.ACCENT, fg="white",
+                 relief="flat", padx=15, pady=5, cursor="hand2").pack(side="left", padx=5)
+
+        tk.Button(btn_frame, text="✕ Close", command=popup.destroy,
+                 font=("Segoe UI", 9), bg=self.BTN_BG, fg=self.TEXT_DIM,
+                 relief="flat", padx=15, pady=5, cursor="hand2").pack(side="left", padx=5)
+
+        popup.update_idletasks()
+        pw = popup.winfo_width()
+        ph = popup.winfo_height()
+        popup.geometry(f"+{rx + 10}+{ry - ph - 8}")
+        popup.configure(highlightbackground=self.CAPSULE_BD, highlightthickness=1)
+
+    # ── Settings Popup ───────────────────────────────────────────
+
+    def _toggle_settings_popup(self, e=None):
+        if self.settings_popup and self.settings_popup.winfo_exists():
+            self.settings_popup.destroy()
+            self.settings_popup = None
+            return
+        self._open_settings_popup()
+
+    def _open_settings_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        popup.configure(bg=self.POPUP_BG)
+        self.settings_popup = popup
+
+        rx = self.root.winfo_x()
+        ry = self.root.winfo_y()
+
+        # Title bar
+        title = tk.Label(popup, text="Quick Settings",
+                         font=("Segoe UI", 10, "bold"),
+                         fg=self.ACCENT, bg=self.POPUP_BG, pady=8)
+        title.pack()
+
+        sep = tk.Frame(popup, bg=self.CAPSULE_BD, height=1)
+        sep.pack(fill="x", padx=12)
+
+        grid = tk.Frame(popup, bg=self.POPUP_BG, padx=12, pady=8)
+        grid.pack()
+
+        btns = [
+            ("📶 Wi-Fi",          self._toggle_wifi),
+            ("📡 Bluetooth",      self._toggle_bluetooth),
+            ("✈ Airplane Mode",  self._toggle_airplane),
+            ("🌙 Dark Mode",      self._toggle_darkmode),
+            ("🔊 Volume Up",      lambda: (pyautogui.press("volumeup") if PYAUTOGUI_AVAILABLE else None, speak("Volume up"))),
+            ("🔉 Volume Down",    lambda: (pyautogui.press("volumedown") if PYAUTOGUI_AVAILABLE else None, speak("Volume down"))),
+            ("🖥 Wired Display",  lambda: os.system("start ms-settings:display")),
+            ("📲 Nearby Sharing", lambda: os.system("start ms-settings:crossdevice")),
+            ("⚙ Windows Settings",lambda: os.system("start ms-settings:")),
+            ("❌ Close",          popup.destroy),
+        ]
+
+        for i, (label, cmd) in enumerate(btns):
+            def _make_cb(c):
+                def _cb():
+                    c()
+                    if hasattr(popup, 'winfo_exists') and popup.winfo_exists():
+                        pass
+                return _cb
+
+            btn = tk.Button(
+                grid, text=label,
+                font=("Segoe UI", 9),
+                fg=self.TEXT_MAIN, bg=self.BTN_BG,
+                activeforeground=self.ACCENT,
+                activebackground=self.BTN_HOVER,
+                relief="flat", bd=0,
+                cursor="hand2",
+                width=16, pady=5,
+                command=_make_cb(cmd)
+            )
+            btn.grid(row=i//2, column=i%2, padx=4, pady=3, sticky="ew")
+
+            def _on_enter(e, b=btn): b.config(bg=self.BTN_HOVER)
+            def _on_leave(e, b=btn): b.config(bg=self.BTN_BG)
+            btn.bind("<Enter>", _on_enter)
+            btn.bind("<Leave>", _on_leave)
+
+        popup.update_idletasks()
+        pw = popup.winfo_width()
+        ph = popup.winfo_height()
+        popup.geometry(f"+{rx + 560 - pw - 10}+{ry - ph - 8}")
+        popup.configure(highlightbackground=self.CAPSULE_BD, highlightthickness=1)
+
+        # Close on outside click
+        popup.bind("<FocusOut>", lambda e: popup.destroy() if popup.winfo_exists() else None)
+
+    # ── Toggle system functions ──────────────────────────────────
+
+    def _toggle_wifi(self):
+        os.system("start ms-settings:network-wifi")
+
+    def _toggle_bluetooth(self):
+        os.system("start ms-settings:bluetooth")
+
+    def _toggle_airplane(self):
+        os.system("start ms-settings:network-airplanemode")
+
+    def _toggle_darkmode(self):
+        os.system("start ms-settings:personalization-colors")
+
+    # ── Apps/Settings Popup (unchanged) ──────────────────────────────────────
+
+    def _toggle_apps_popup(self, e=None):
+        if self.apps_popup and self.apps_popup.winfo_exists():
+            self.apps_popup.destroy()
+            self.apps_popup = None
+            return
+        self._open_apps_popup()
+
+    def _open_apps_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        popup.configure(bg=self.POPUP_BG)
+        self.apps_popup = popup
+
+        rx = self.root.winfo_x()
+        ry = self.root.winfo_y()
+
+        # Header
+        header = tk.Frame(popup, bg=self.POPUP_BG, pady=8)
+        header.pack(fill="x", padx=12)
+        tk.Label(header, text="ISHA Launcher",
+                 font=("Segoe UI", 10, "bold"),
+                 fg=self.GOLD, bg=self.POPUP_BG).pack()
+
+        sep = tk.Frame(popup, bg=self.CAPSULE_BD, height=1)
+        sep.pack(fill="x", padx=12)
+
+        # Segmented control
+        tab_frame = tk.Frame(popup, bg=self.POPUP_BG, pady=6)
+        tab_frame.pack(fill="x", padx=12)
+
+        self._active_tab = tk.StringVar(value="apps")
+        content_frame = tk.Frame(popup, bg=self.POPUP_BG)
+        content_frame.pack(fill="both", expand=True, padx=8)
+
+        def _switch(tab):
+            self._active_tab.set(tab)
+            for w in content_frame.winfo_children():
+                w.destroy()
+            if tab == "apps":
+                apk_btn.config(bg=self.ACCENT, fg="#FFF")
+                set_btn.config(bg=self.BTN_BG, fg=self.TEXT_DIM)
+                _build_list(content_frame, list(APPS.keys()), "app")
+            else:
+                set_btn.config(bg=self.ACCENT, fg="#FFF")
+                apk_btn.config(bg=self.BTN_BG, fg=self.TEXT_DIM)
+                _build_list(content_frame, list(SETTINGS.keys()), "setting")
+
+        apk_btn = tk.Button(
+            tab_frame, text="  Apps  ",
+            font=("Segoe UI", 9, "bold"),
+            fg="#FFF", bg=self.ACCENT,
+            relief="flat", bd=0, cursor="hand2", padx=10, pady=4,
+            command=lambda: _switch("apps")
+        )
+        apk_btn.pack(side="left", padx=2)
+
+        set_btn = tk.Button(
+            tab_frame, text="  Settings  ",
+            font=("Segoe UI", 9, "bold"),
+            fg=self.TEXT_DIM, bg=self.BTN_BG,
+            relief="flat", bd=0, cursor="hand2", padx=10, pady=4,
+            command=lambda: _switch("settings")
+        )
+        set_btn.pack(side="left", padx=2)
+
+        # Search inside popup
+        search_var = tk.StringVar()
+        search_box = tk.Entry(
+            tab_frame, textvariable=search_var,
+            font=("Segoe UI", 9),
+            fg=self.TEXT_MAIN, bg=self.BTN_BG,
+            insertbackground=self.ACCENT,
+            relief="flat", bd=0, highlightthickness=1,
+            highlightcolor=self.ACCENT
+        )
+        search_box.pack(side="right", padx=4, ipadx=6, ipady=3)
+
+        def _build_list(parent, items, kind, filter_text=""):
+            for w in parent.winfo_children():
+                w.destroy()
+            filtered = [i for i in items if filter_text.lower() in i.lower()]
+
+            # Scrollable canvas
+            canvas = tk.Canvas(parent, bg=self.POPUP_BG, highlightthickness=0,
+                               width=340, height=260)
+            scrollbar = tk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=scrollbar.set)
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            inner = tk.Frame(canvas, bg=self.POPUP_BG)
+            canvas.create_window((0, 0), window=inner, anchor="nw")
+
+            def _on_frame_configure(e):
+                canvas.configure(scrollregion=canvas.bbox("all"))
+            inner.bind("<Configure>", _on_frame_configure)
+
+            for item in filtered:
+                def _make_open(k=item, t=kind):
+                    def _open():
+                        if t == "app":
+                            os.system(APPS.get(k, ""))
+                            speak(f"{k} open kar raha hu")
+                        else:
+                            os.system(f"start {SETTINGS.get(k, '')}")
+                            speak(f"{k} settings open kar raha hu")
+                        popup.destroy()
+                    return _open
+
+                row = tk.Frame(inner, bg=self.POPUP_BG)
+                row.pack(fill="x", pady=1)
+
+                icon = "🚀" if kind == "app" else "⚙"
+                btn = tk.Button(
+                    row,
+                    text=f" {icon}  {item.title()}",
+                    font=("Segoe UI", 9),
+                    fg=self.TEXT_MAIN, bg=self.POPUP_BG,
+                    activeforeground=self.ACCENT,
+                    activebackground=self.BTN_HOVER,
+                    relief="flat", bd=0, cursor="hand2",
+                    anchor="w", width=36, pady=3,
+                    command=_make_open()
+                )
+                btn.pack(fill="x", padx=4)
+
+                def _e(e, b=btn): b.config(bg=self.BTN_HOVER)
+                def _l(e, b=btn): b.config(bg=self.POPUP_BG)
+                btn.bind("<Enter>", _e)
+                btn.bind("<Leave>", _l)
+
+            canvas.bind("<MouseWheel>",
+                lambda e: canvas.yview_scroll(-1*(e.delta//120), "units"))
+
+        def _on_search(*args):
+            txt = search_var.get()
+            tab = self._active_tab.get()
+            if tab == "apps":
+                _build_list(content_frame, list(APPS.keys()), "app", txt)
+            else:
+                _build_list(content_frame, list(SETTINGS.keys()), "setting", txt)
+
+        search_var.trace("w", _on_search)
+
+        # Close btn
+        close_frame = tk.Frame(popup, bg=self.POPUP_BG, pady=4)
+        close_frame.pack(fill="x")
+        tk.Button(
+            close_frame, text="✕ Close",
+            font=("Segoe UI", 8),
+            fg=self.TEXT_DIM, bg=self.POPUP_BG,
+            activeforeground=self.ACCENT2,
+            relief="flat", bd=0, cursor="hand2",
+            command=popup.destroy
+        ).pack()
+
+        # Initial content
+        _build_list(content_frame, list(APPS.keys()), "app")
+
+        popup.update_idletasks()
+        pw = popup.winfo_width()
+        ph = popup.winfo_height()
+        popup.geometry(f"+{rx + 10}+{ry - ph - 8}")
+        popup.configure(highlightbackground=self.CAPSULE_BD, highlightthickness=1)
+
+    # ── Greet on startup ─────────────────────────────────────────
+
+    def _greet(self):
+        greeting = get_time_greeting()
+        msg = f"{greeting}! Main Isha hu. Aapki kya help kar sakti hu? 😊"
+        self.root.after(800, lambda: speak(msg))
+
+
+# ═══════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════
+
+def main():
+    root = tk.Tk()
+
+    # Remove default window decorations — we use overrideredirect for full custom look
+    # Keep normal window so it appears in taskbar
+    root.configure(bg="#0A0A0F")
+
+    # Make background transparent if possible (Windows)
+    try:
+        root.attributes("-transparentcolor", "#0A0A0F")
+    except:
+        pass
+
+    app = IshaGUI(root)
+
+    # Keyboard shortcut to quit
+    root.bind("<Escape>", lambda e: root.destroy())
+
+    # Tray-like drag support
+    _drag = {"x": 0, "y": 0}
+
+    def _start_drag(e):
+        _drag["x"] = e.x_root - root.winfo_x()
+        _drag["y"] = e.y_root - root.winfo_y()
+
+    def _do_drag(e):
+        root.geometry(f"+{e.x_root-_drag['x']}+{e.y_root-_drag['y']}")
+
+    app.canvas.bind("<ButtonPress-3>",  _start_drag)
+    app.canvas.bind("<B3-Motion>",      _do_drag)
+
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
